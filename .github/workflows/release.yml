@@ -23,7 +23,7 @@ jobs:
     needs: validate-tag
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --bins
       - shell: pwsh
@@ -37,7 +37,7 @@ jobs:
     needs: validate-tag
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --bins
       - run: cargo install cargo-bundle --locked
@@ -53,7 +53,7 @@ jobs:
     needs: validate-tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libgl1-mesa-dev
       - run: cargo build --release --bins
