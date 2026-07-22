@@ -1,0 +1,78 @@
+[package]
+name = "citrix-vdi-launcher"
+version = "0.1.0"
+edition = "2024"
+authors = ["Citrix VDI Launcher contributors"]
+description = "Browserless cross-platform Citrix Gateway and StoreFront VDI launcher"
+license = "LicenseRef-Proprietary"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+eframe = "0.32"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+totp-rs = "5"
+url = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[build-dependencies]
+winresource = "0.1"
+
+[package.metadata.bundle]
+name = "Citrix VDI Launcher"
+identifier = "ru.local.citrix-vdi-launcher"
+icon = ["assets/icons/citrix-vdi-launcher.icns"]
+category = "public.app-category.business"
+short_description = "Citrix VDI launcher without a browser"
+
+[package.metadata.deb]
+name = "citrix-vdi-launcher"
+section = "net"
+priority = "optional"
+assets = [
+  ["target/release/citrix-vdi-launcher", "usr/bin/", "755"],
+  ["target/release/citrix-vdi-cli", "usr/bin/", "755"],
+  ["packaging/linux/citrix-vdi-launcher.desktop", "usr/share/applications/", "644"],
+  ["assets/icons/icon-32.png", "usr/share/icons/hicolor/32x32/apps/citrix-vdi-launcher.png", "644"],
+  ["assets/icons/icon-48.png", "usr/share/icons/hicolor/48x48/apps/citrix-vdi-launcher.png", "644"],
+  ["assets/icons/icon-64.png", "usr/share/icons/hicolor/64x64/apps/citrix-vdi-launcher.png", "644"],
+  ["assets/icons/icon-128.png", "usr/share/icons/hicolor/128x128/apps/citrix-vdi-launcher.png", "644"],
+  ["assets/icons/icon-256.png", "usr/share/icons/hicolor/256x256/apps/citrix-vdi-launcher.png", "644"],
+  ["assets/icons/icon-512.png", "usr/share/icons/hicolor/512x512/apps/citrix-vdi-launcher.png", "644"],
+  ["README.md", "usr/share/doc/citrix-vdi-launcher/README.md", "644"],
+  ["LICENSE", "usr/share/doc/citrix-vdi-launcher/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/citrix-vdi-launcher", dest = "/usr/bin/citrix-vdi-launcher", mode = "0755" },
+  { source = "target/release/citrix-vdi-cli", dest = "/usr/bin/citrix-vdi-cli", mode = "0755" },
+  { source = "packaging/linux/citrix-vdi-launcher.desktop", dest = "/usr/share/applications/citrix-vdi-launcher.desktop", mode = "0644" },
+  { source = "assets/icons/icon-32.png", dest = "/usr/share/icons/hicolor/32x32/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "assets/icons/icon-48.png", dest = "/usr/share/icons/hicolor/48x48/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "assets/icons/icon-64.png", dest = "/usr/share/icons/hicolor/64x64/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "assets/icons/icon-128.png", dest = "/usr/share/icons/hicolor/128x128/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "assets/icons/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "assets/icons/icon-512.png", dest = "/usr/share/icons/hicolor/512x512/apps/citrix-vdi-launcher.png", mode = "0644" },
+  { source = "LICENSE", dest = "/usr/share/licenses/citrix-vdi-launcher/LICENSE", mode = "0644" },
+]

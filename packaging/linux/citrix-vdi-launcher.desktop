@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Citrix VDI Launcher
+Comment=Connect to Citrix VDI without a browser
+Exec=citrix-vdi-launcher
+Icon=citrix-vdi-launcher
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=true

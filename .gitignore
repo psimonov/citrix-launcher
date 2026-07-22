@@ -1,0 +1,16 @@
+/target/
+/dist/
+*.ica
+*.log
+*.tmp
+*.bak
+*.pdb
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+/assets/icons/icon-chroma.png
+/assets/icons/icon-master-v1.png
