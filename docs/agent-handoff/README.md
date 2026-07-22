@@ -25,7 +25,7 @@ This directory is the canonical, vendor-neutral context package for continuing d
 
 - Version: `0.0.1`.
 - Default branch: `main`.
-- Repository visibility: private.
+- Repository visibility: public; source remains proprietary under `LICENSE`.
 - GUI and CLI share one Rust library and one OS-standard configuration.
 - Direct network authentication has been proven against one Citrix Gateway/StoreFront deployment without opening a browser.
 - CI builds and tests on Windows, macOS, and Linux.

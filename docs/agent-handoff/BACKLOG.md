@@ -18,6 +18,7 @@ This is a prioritized technical backlog, not a promise of scope.
 - Cache release packaging tools in GitHub Actions to reduce build time.
 - Evaluate universal macOS output (Apple Silicon and Intel) instead of the current native runner architecture artifact.
 - Document supported Citrix Workspace and Gateway/StoreFront version ranges after controlled testing.
+- Remove the vendored `wayland-scanner` security backport and re-enable native Wayland after a stable eframe/winit/wayland-scanner release accepts `quick-xml >=0.41.0`; rerun `cargo audit` and native GNOME/KDE tests. Until then Linux uses X11/XWayland to avoid RUSTSEC-2026-0194, RUSTSEC-2026-0195, and the unmaintained Wayland font-parser chain.
 
 ## Known limitations
 
@@ -25,6 +26,7 @@ This is a prioritized technical backlog, not a promise of scope.
 - There is no automated end-to-end test because it would require live credentials and OTP.
 - Native packages are not yet signed/notarized.
 - Linux keyring availability varies by desktop session; headless environments may not provide Secret Service.
+- Native Wayland is temporarily disabled for dependency security; GNOME and KDE use XWayland, while MATE uses X11 directly.
 - The current GUI toolkit is cross-platform and system-themed, but not a separate OS-native widget implementation for each platform.
 
 ## Definition of done for future changes

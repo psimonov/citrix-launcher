@@ -8,6 +8,14 @@
 - Citrix Workspace only for end-to-end launch testing.
 - GitHub CLI is optional; standard Git and the GitHub web UI are sufficient.
 
+## Dependency baseline
+
+- Use the latest stable, supported, security-patched releases verified from official sources at the time of the change.
+- Review Dependabot and ecosystem security advisories; run `cargo audit` when dependency state changes.
+- Do not use prerelease, nightly, deprecated, end-of-life, or known-vulnerable components without an explicit documented exception.
+- Commit `Cargo.lock` and validate every upgrade across all supported operating systems through CI.
+- If the newest stable release is incompatible, document the exact blocker and security implications instead of silently retaining an old version.
+
 Windows development may use rustup and Scoop. Match the installed Rust target to its linker: MSVC Rust needs Visual C++ Build Tools; GNU Rust needs MinGW. Do not assume MinGW is required when using the MSVC target.
 
 ## Change loop

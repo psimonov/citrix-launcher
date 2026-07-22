@@ -102,11 +102,11 @@ Snap, Flatpak, and AppImage packages are intentionally not produced.
 
 - Windows releases are standalone EXE files and require no Rust or MinGW runtime.
 - macOS uses operating-system frameworks and Keychain.
-- Linux native packages use the desktop environment's standard X11/Wayland and Secret Service components.
+- Linux native packages use X11/XWayland and Secret Service components. Native Wayland is temporarily disabled until the stable upstream dependency chain includes the published `quick-xml` security fixes.
 - Citrix Workspace is the only application-level runtime requirement.
 
 ## Security
 
 Never commit credentials, OTP/TOTP secrets, ICA files, cookies, CSRF tokens, logs, or StoreFront response dumps. See [SECURITY.md](SECURITY.md).
 
-This is a private repository. No license is granted for redistribution unless explicitly provided by the repository owner.
+This repository is publicly readable but proprietary. Public access does not grant permission to use, modify, or redistribute the software; see [LICENSE](LICENSE).

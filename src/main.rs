@@ -77,7 +77,7 @@ impl LauncherApp {
     }
 }
 impl eframe::App for LauncherApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Some(rx) = &self.events {
             while let Ok(event) = rx.try_recv() {
                 match event {
@@ -93,80 +93,79 @@ impl eframe::App for LauncherApp {
                 }
             }
         }
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Citrix VDI Launcher");
-            ui.add_space(8.0);
-            ui.label(format!("Рабочий стол: {}", self.config.vdi_name));
-            ui.label(&self.status);
-            ui.add_space(12.0);
-            if self.secret.trim().is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label("OTP:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.otp)
-                            .password(true)
-                            .desired_width(200.0)
-                            .hint_text("Код из Яндекс ID"),
-                    );
-                });
-            } else {
-                ui.label("OTP будет рассчитан автоматически из защищённого секрета.");
-            }
-            ui.add_space(10.0);
+        ui.heading("Citrix VDI Launcher");
+        ui.add_space(8.0);
+        ui.label(format!("Рабочий стол: {}", self.config.vdi_name));
+        ui.label(&self.status);
+        ui.add_space(12.0);
+        if self.secret.trim().is_empty() {
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(!self.running, egui::Button::new("Подключиться"))
-                    .clicked()
-                {
-                    self.launch();
-                }
-                if ui
-                    .button(if self.show_settings {
-                        "Скрыть настройки"
-                    } else {
-                        "Настройки"
-                    })
-                    .clicked()
-                {
-                    self.show_settings = !self.show_settings;
-                }
+                ui.label("OTP:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.otp)
+                        .password(true)
+                        .desired_width(200.0)
+                        .hint_text("Код из Яндекс ID"),
+                );
             });
-            if self.running {
-                ui.add(egui::Spinner::new());
-                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        } else {
+            ui.label("OTP будет рассчитан автоматически из защищённого секрета.");
+        }
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!self.running, egui::Button::new("Подключиться"))
+                .clicked()
+            {
+                self.launch();
             }
-            if self.show_settings {
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    egui::Grid::new("settings")
-                        .num_columns(2)
-                        .spacing([12.0, 8.0])
-                        .show(ui, |ui| {
-                            field(ui, "StoreFront URL", &mut self.config.storefront_url, false);
-                            field(ui, "Название VDI", &mut self.config.vdi_name, false);
-                            field(ui, "Логин", &mut self.config.username, false);
-                            field(ui, "Пароль", &mut self.password, true);
-                            field(ui, "TOTP-секрет", &mut self.secret, true);
-                            field(ui, "Путь Citrix", &mut self.config.citrix_path, false);
-                        });
-                    ui.horizontal(|ui| {
-                        if ui.button("Найти Citrix автоматически").clicked() {
-                            self.status = match self.config.refresh_citrix_path() {
-                                Some(p) => format!("Citrix найден: {}", p.display()),
-                                None => "Citrix Workspace не найден".into(),
-                            };
-                        }
+            if ui
+                .button(if self.show_settings {
+                    "Скрыть настройки"
+                } else {
+                    "Настройки"
+                })
+                .clicked()
+            {
+                self.show_settings = !self.show_settings;
+            }
+        });
+        if self.running {
+            ui.add(egui::Spinner::new());
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        if self.show_settings {
+            ui.separator();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("settings")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        field(ui, "StoreFront URL", &mut self.config.storefront_url, false);
+                        field(ui, "Название VDI", &mut self.config.vdi_name, false);
+                        field(ui, "Логин", &mut self.config.username, false);
+                        field(ui, "Пароль", &mut self.password, true);
+                        field(ui, "TOTP-секрет", &mut self.secret, true);
+                        field(ui, "Путь Citrix", &mut self.config.citrix_path, false);
                     });
-                    ui.small("Системная тема выбирается автоматически. Браузер не используется.");
-                    if ui.button("Сохранить настройки").clicked() {
-                        self.status = match self.save() {
-                            Ok(()) => "Настройки сохранены".into(),
-                            Err(e) => format!("Ошибка сохранения: {e:#}"),
+                ui.horizontal(|ui| {
+                    if ui.button("Найти Citrix автоматически").clicked() {
+                        self.status = match self.config.refresh_citrix_path() {
+                            Some(p) => format!("Citrix найден: {}", p.display()),
+                            None => "Citrix Workspace не найден".into(),
                         };
                     }
                 });
-            }
-        });
+                ui.small("Системная тема выбирается автоматически. Браузер не используется.");
+                if ui.button("Сохранить настройки").clicked() {
+                    self.status = match self.save() {
+                        Ok(()) => "Настройки сохранены".into(),
+                        Err(e) => format!("Ошибка сохранения: {e:#}"),
+                    };
+                }
+            });
+        }
     }
 }
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool) {

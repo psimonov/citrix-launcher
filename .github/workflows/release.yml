@@ -23,12 +23,12 @@ jobs:
     needs: validate-tag
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --bins
       - shell: pwsh
         run: Compress-Archive -Path target/release/citrix-vdi-launcher.exe,target/release/citrix-vdi-cli.exe -DestinationPath citrix-vdi-launcher-windows-x86_64.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-x86_64
           path: citrix-vdi-launcher-windows-x86_64.zip
@@ -37,14 +37,14 @@ jobs:
     needs: validate-tag
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --bins
       - run: cargo install cargo-bundle --locked
       - run: cargo bundle --release --bin citrix-vdi-launcher
       - run: cp target/release/citrix-vdi-cli target/release/bundle/osx/citrix-vdi-launcher.app/Contents/MacOS/citrix-vdi-cli
       - run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/osx/citrix-vdi-launcher.app citrix-vdi-launcher-macos-native.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: citrix-vdi-launcher-macos-native.zip
@@ -53,14 +53,14 @@ jobs:
     needs: validate-tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libgl1-mesa-dev
       - run: cargo build --release --bins
       - run: cargo install cargo-deb cargo-generate-rpm --locked
       - run: cargo deb --no-build
       - run: cargo generate-rpm
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-native-packages
           path: |
@@ -71,13 +71,13 @@ jobs:
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: artifacts/**/*

@@ -34,6 +34,10 @@ Ship Windows EXE, macOS APP, DEB, and RPM. Do not add Snap, Flatpak, or AppImage
 
 Build and publish releases only in GitHub Actions after pushing a valid `vMAJOR.MINOR.PATCH` SemVer tag. Local commands and manual workflow dispatch must not publish releases.
 
+### Secure Linux display backend baseline
+
+Use X11/XWayland until the latest stable eframe dependency chain upgrades `wayland-scanner` beyond its vulnerable `quick-xml 0.39` constraint. The repository carries a source-identical stable `wayland-scanner 0.31.10` backport whose dependency constraint is raised to patched stable `quick-xml 0.41`; do not suppress the high-severity RustSec advisories or use an unreleased Git dependency. Remove the vendored backport and revisit native Wayland as soon as a patched stable upstream release exists.
+
 ### OS-standard configuration
 
 Use conventional per-user directories and auto-discover Citrix. The same saved settings serve GUI and CLI.
@@ -42,9 +46,9 @@ Use conventional per-user directories and auto-discover Citrix. The same saved s
 
 Repository-facing README, policies, workflows, commits, and handoff documentation are English. Current end-user labels and messages are Russian.
 
-### Private, proprietary repository
+### Public, proprietary repository
 
-The project is private and all rights are reserved. Builds are published as private GitHub Release assets, not committed to Git.
+The project is publicly readable and all rights are reserved. Public visibility does not grant a license. Builds are published as GitHub Release assets, not committed to Git.
 
 ## Change policy
 

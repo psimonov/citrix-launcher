@@ -7,36 +7,41 @@ description = "Browserless cross-platform Citrix Gateway and StoreFront VDI laun
 license = "LicenseRef-Proprietary"
 
 [dependencies]
-anyhow = "1"
-base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
-directories = "6"
-eframe = "0.32"
-regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "rustls-tls"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-totp-rs = "5"
-url = "2"
+anyhow = "1.0.104"
+base64 = "0.22.1"
+clap = { version = "4.6.4", features = ["derive"] }
+directories = "6.0.0"
+eframe = { version = "0.35.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "x11"] }
+regex = "1.13.1"
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "cookies", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+totp-rs = "5.7.2"
+url = "2.5.8"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+keyring = { version = "4.1.5", default-features = false, features = ["v1", "apple-native-keyring-store"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+keyring = { version = "4.1.5", default-features = false, features = ["v1", "zbus-secret-service-keyring-store"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2.177"
 
 [profile.release]
 lto = "thin"
 strip = true
 
 [build-dependencies]
-winresource = "0.1"
+winresource = "0.1.31"
+
+# Security backport for RUSTSEC-2026-0194 and RUSTSEC-2026-0195. The latest
+# stable wayland-scanner still constrains quick-xml to the vulnerable 0.39 line.
+[patch.crates-io]
+wayland-scanner = { path = "vendor/wayland-scanner" }
 
 [package.metadata.bundle]
 name = "Citrix VDI Launcher"
