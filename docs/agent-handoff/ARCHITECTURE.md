@@ -29,6 +29,8 @@
 
 The automation layer emits redaction-safe progress events at the OTP, Gateway, StoreFront, resource discovery, VDI preparation, ICA, and Workspace handoff boundaries. The GUI renders these events in its fixed status region; the CLI prints the same messages.
 
+After a successful GUI handoff, a read-only process monitor observes the platform ICA session process (`wfica32` on Windows, `wfica` on Linux, or `Citrix Viewer` on macOS). Once an observed session exits, the GUI returns to its ready state. Failure to observe a session within 30 seconds leaves the successful handoff status unchanged; the launcher never owns or terminates the Citrix process.
+
 ## Critical protocol knowledge
 
 - Gateway CSRF and StoreFront CSRF are different tokens. Supplying the gateway meta token as StoreFront's `Csrf-Token` caused HTTP 403 in the validated deployment.

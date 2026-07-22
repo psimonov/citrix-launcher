@@ -72,6 +72,8 @@ The OTP is one real text-edit control, not six independent controls. It accepts 
 
 During a connection attempt, the status region names the active protocol stage. The connect button and status marker show progress, while OTP editing and navigation to settings are disabled. During native Citrix executable selection, the settings form, navigation, and footer actions are disabled and the browse button shows progress.
 
+After an observed Citrix desktop session closes, the connection screen returns to the ready status. Session observation must remain read-only and must not tie Citrix lifetime to the launcher process.
+
 ## Design tokens
 
 - Spacing unit: `8 px`.

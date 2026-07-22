@@ -33,6 +33,63 @@ struct LauncherApp {
     settings_can_scroll: bool,
     file_dialog_result: Option<Receiver<Option<std::path::PathBuf>>>,
     last_otp_complete: bool,
+    session_monitor: Option<SessionMonitor>,
+}
+
+struct SessionMonitor {
+    system: sysinfo::System,
+    started_at: std::time::Instant,
+    last_check: std::time::Instant,
+    active_seen: bool,
+}
+
+impl SessionMonitor {
+    fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            system: sysinfo::System::new(),
+            started_at: now,
+            last_check: now - std::time::Duration::from_secs(1),
+            active_seen: false,
+        }
+    }
+
+    fn poll(&mut self) -> SessionState {
+        if self.last_check.elapsed() < std::time::Duration::from_secs(1) {
+            return SessionState::Waiting;
+        }
+        self.last_check = std::time::Instant::now();
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let active = self
+            .system
+            .processes()
+            .values()
+            .any(|process| is_citrix_session_process(&process.name().to_string_lossy()));
+        if active {
+            self.active_seen = true;
+            SessionState::Active
+        } else if self.active_seen {
+            SessionState::Closed
+        } else if self.started_at.elapsed() >= std::time::Duration::from_secs(30) {
+            SessionState::NotObserved
+        } else {
+            SessionState::Waiting
+        }
+    }
+}
+
+enum SessionState {
+    Waiting,
+    Active,
+    Closed,
+    NotObserved,
+}
+
+fn is_citrix_session_process(name: &str) -> bool {
+    ["wfica32.exe", "wfica32", "wfica", "Citrix Viewer"]
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
 }
 impl LauncherApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -63,6 +120,7 @@ impl LauncherApp {
             settings_can_scroll: true,
             file_dialog_result: None,
             last_otp_complete: false,
+            session_monitor: None,
         }
     }
     fn save(&mut self) -> anyhow::Result<()> {
@@ -72,6 +130,7 @@ impl LauncherApp {
         self.config.save_with_secrets(&self.password, &self.secret)
     }
     fn launch(&mut self) {
+        self.session_monitor = None;
         if self.preview {
             let (tx, rx) = mpsc::channel();
             self.events = Some(rx);
@@ -135,6 +194,19 @@ impl LauncherApp {
 }
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some(monitor) = &mut self.session_monitor {
+            match monitor.poll() {
+                SessionState::Closed => {
+                    self.status = "Готово к подключению".into();
+                    self.session_monitor = None;
+                }
+                SessionState::NotObserved => self.session_monitor = None,
+                SessionState::Waiting | SessionState::Active => {
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_secs(1));
+                }
+            }
+        }
         if let Some(rx) = &self.file_dialog_result {
             match rx.try_recv() {
                 Ok(Some(path)) => {
@@ -165,7 +237,10 @@ impl eframe::App for LauncherApp {
                         self.otp.clear();
                         self.last_otp_complete = false;
                         self.status = match r {
-                            Ok(()) => "Рабочий стол открыт в Citrix Workspace".into(),
+                            Ok(()) => {
+                                self.session_monitor = Some(SessionMonitor::new());
+                                "Рабочий стол открыт в Citrix Workspace".into()
+                            }
                             Err(e) => format!("Ошибка: {e:#}"),
                         };
                     }
@@ -453,7 +528,7 @@ impl LauncherApp {
         {
             "Проверьте настройки и повторите попытку"
         } else if self.status.contains("открыт в Citrix Workspace") {
-            "Подключение передано Citrix; launcher можно закрыть"
+            "Подключение передано Citrix. Приложение можно закрыть"
         } else if self.secret.trim().is_empty() && self.otp.len() < 6 {
             "Введите код из приложения-аутентификатора"
         } else {
@@ -864,4 +939,19 @@ fn configure_style(ctx: &egui::Context) {
             widget.corner_radius = 8.into();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_citrix_session_process;
+
+    #[test]
+    fn recognizes_cross_platform_ica_session_processes() {
+        for name in ["wfica32.exe", "WFICA32", "wfica", "Citrix Viewer"] {
+            assert!(is_citrix_session_process(name), "{name}");
+        }
+        for name in ["Receiver", "SelfService", "wfcrun32", "concentr"] {
+            assert!(!is_citrix_session_process(name), "{name}");
+        }
+    }
 }
