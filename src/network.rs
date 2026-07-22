@@ -41,7 +41,9 @@ pub fn authenticate(
     username: &str,
     password: &str,
     otp: &str,
+    progress: &dyn Fn(&str),
 ) -> Result<GatewaySession> {
+    progress("Открытие Citrix Gateway…");
     let base = Url::parse(base)?;
     let client = Client::builder()
         .cookie_store(true)
@@ -90,6 +92,7 @@ pub fn authenticate(
         "StateContext",
     )?;
 
+    progress("Проверка логина, пароля и одноразового кода…");
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("login", username)
         .append_pair("passwd", password)
@@ -167,6 +170,7 @@ pub fn authenticate(
         }
     }
     if text.contains("<Result>success</Result>") {
+        progress("Авторизация выполнена. Открытие Citrix StoreFront…");
         let portal = client.get(base.clone()).header(USER_AGENT, UA).send()?;
         let portal_url = portal.url().clone();
         let portal_cookie_csrf = cookie_from_headers(portal.headers(), "CsrfToken");
@@ -213,6 +217,7 @@ pub fn authenticate(
             .or(portal_cookie_csrf)
             .or(portal_meta_csrf)
             .context("StoreFront did not provide a CSRF token")?;
+        progress("Сеанс Citrix StoreFront создан. Загрузка рабочих столов…");
         let resources_url = portal_url.join("Resources/List")?;
         let resources_body = "format=json&resourceDetails=Default";
         let resources_ajax = custom_hash(
@@ -305,6 +310,7 @@ pub fn authenticate(
                 resources_text.chars().take(500).collect::<String>()
             );
         }
+        progress("Citrix StoreFront открыт");
         text = format!(
             "<!-- AUTH RESPONSE -->\n{text}\n<!-- PORTAL URL: {portal_url} -->\n{portal_text}\n<!-- CONFIG {config_status} {config_url} -->\n{config_text}\n<!-- RESOURCES {resources_status} {resources_url} -->\n{resources_text}"
         );
@@ -332,7 +338,9 @@ pub fn launch_vdi(
     names: &[String],
     citrix_path: &str,
     ica_path: &Path,
+    progress: &dyn Fn(&str),
 ) -> Result<String> {
+    progress("Поиск рабочего стола в Citrix StoreFront…");
     let document: Value =
         serde_json::from_str(&session.resources).context("Invalid StoreFront resources JSON")?;
     let wanted: Vec<String> = names
@@ -371,6 +379,7 @@ pub fn launch_vdi(
         .and_then(Value::as_str)
         .unwrap_or("VDI")
         .to_owned();
+    progress("Рабочий стол найден");
     let status_path = resource
         .get("launchstatusurl")
         .and_then(Value::as_str)
@@ -380,6 +389,7 @@ pub fn launch_vdi(
         .and_then(Value::as_str)
         .context("launchurl missing")?;
     let status_url = session.portal.join(status_path)?;
+    progress("Подготовка рабочего стола к запуску…");
     let mut ready = false;
     for _ in 0..30 {
         let ajax = custom_hash(
@@ -429,6 +439,7 @@ pub fn launch_vdi(
     if !ready {
         bail!("VDI was not ready before launch timeout");
     }
+    progress("Получение файла запуска ICA…");
     let mut launch_url = session.portal.join(launch_path)?;
     launch_url
         .query_pairs_mut()
@@ -460,6 +471,7 @@ pub fn launch_vdi(
     if !Path::new(citrix_path).is_file() {
         bail!("Citrix executable not found: {citrix_path}");
     }
+    progress("Открытие Citrix Workspace…");
     let mut command = Command::new(citrix_path);
     command
         .arg(ica_path)
@@ -481,6 +493,7 @@ pub fn launch_vdi(
     command
         .spawn()
         .with_context(|| format!("Failed to launch Citrix: {citrix_path}"))?;
+    progress("Citrix Workspace запущен");
     Ok(display_name)
 }
 

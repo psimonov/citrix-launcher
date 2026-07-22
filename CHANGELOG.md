@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Redesigned the GUI with a responsive connection screen, a bounded settings form, a six-digit OTP editor, native file selection, and cross-platform icon assets.
+- Added stage-specific connection feedback, progress indicators, and interaction locking while authentication, VDI preparation, or file selection is active.
 - Updated direct Rust dependencies and GitHub Actions to their latest stable releases.
 - Migrated the GUI to the eframe 0.35 application API and the Glow renderer.
 - Added a weekly and dependency-change RustSec audit workflow.

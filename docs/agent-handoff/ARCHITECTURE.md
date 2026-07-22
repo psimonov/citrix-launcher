@@ -27,6 +27,8 @@
 10. Match the configured VDI display name using normalized text and obtain its launch URL.
 11. Request ICA launch data, write a short-lived local `.ica` file, and start Citrix Workspace detached with stdin/stdout/stderr disconnected.
 
+The automation layer emits redaction-safe progress events at the OTP, Gateway, StoreFront, resource discovery, VDI preparation, ICA, and Workspace handoff boundaries. The GUI renders these events in its fixed status region; the CLI prints the same messages.
+
 ## Critical protocol knowledge
 
 - Gateway CSRF and StoreFront CSRF are different tokens. Supplying the gateway meta token as StoreFront's `Csrf-Token` caused HTTP 403 in the validated deployment.

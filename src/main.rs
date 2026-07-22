@@ -32,6 +32,7 @@ struct LauncherApp {
     preview: bool,
     settings_can_scroll: bool,
     file_dialog_result: Option<Receiver<Option<std::path::PathBuf>>>,
+    last_otp_complete: bool,
 }
 impl LauncherApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -61,6 +62,7 @@ impl LauncherApp {
             preview,
             settings_can_scroll: true,
             file_dialog_result: None,
+            last_otp_complete: false,
         }
     }
     fn save(&mut self) -> anyhow::Result<()> {
@@ -71,7 +73,26 @@ impl LauncherApp {
     }
     fn launch(&mut self) {
         if self.preview {
-            self.status = "Демонстрация: данные готовы к подключению".into();
+            let (tx, rx) = mpsc::channel();
+            self.events = Some(rx);
+            self.running = true;
+            self.status = "Одноразовый код введён".into();
+            std::thread::spawn(move || {
+                for message in [
+                    "Открытие Citrix Gateway…",
+                    "Проверка логина, пароля и одноразового кода…",
+                    "Авторизация выполнена. Открытие Citrix StoreFront…",
+                    "Сеанс Citrix StoreFront создан. Загрузка рабочих столов…",
+                    "Рабочий стол найден",
+                    "Подготовка рабочего стола к запуску…",
+                    "Получение файла запуска ICA…",
+                    "Открытие Citrix Workspace…",
+                ] {
+                    let _ = tx.send(LaunchEvent::Status(message.into()));
+                    std::thread::sleep(std::time::Duration::from_millis(650));
+                }
+                let _ = tx.send(LaunchEvent::Finished(Ok(())));
+            });
             return;
         }
         if let Err(e) = self.save() {
@@ -118,9 +139,15 @@ impl eframe::App for LauncherApp {
             match rx.try_recv() {
                 Ok(Some(path)) => {
                     self.config.citrix_path = path.to_string_lossy().into_owned();
+                    self.status = "Путь к Citrix Workspace выбран".into();
                     self.file_dialog_result = None;
                 }
-                Ok(None) | Err(mpsc::TryRecvError::Disconnected) => {
+                Ok(None) => {
+                    self.status = "Выбор файла отменён".into();
+                    self.file_dialog_result = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.status = "Не удалось открыть окно выбора файла".into();
                     self.file_dialog_result = None;
                 }
                 Err(mpsc::TryRecvError::Empty) => {
@@ -136,8 +163,9 @@ impl eframe::App for LauncherApp {
                     LaunchEvent::Finished(r) => {
                         self.running = false;
                         self.otp.clear();
+                        self.last_otp_complete = false;
                         self.status = match r {
-                            Ok(()) => "VDI передана в Citrix Workspace".into(),
+                            Ok(()) => "Рабочий стол открыт в Citrix Workspace".into(),
                             Err(e) => format!("Ошибка: {e:#}"),
                         };
                     }
@@ -198,7 +226,7 @@ impl LauncherApp {
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
                 let state = UiState::from_status(&self.status, self.running);
-                status_dot(ui, state.color(palette));
+                status_indicator(ui, state.color(palette), self.running);
                 let status_width = (ui.available_width() - 22.0).max(120.0);
                 ui.allocate_ui_with_layout(
                     egui::vec2(status_width, 72.0),
@@ -235,7 +263,16 @@ impl LauncherApp {
                 });
             });
             ui.add_space(6.0);
-            otp_input(ui, &mut self.otp, palette);
+            otp_input(ui, &mut self.otp, palette, !self.running);
+            let otp_complete = self.otp.len() == 6;
+            if otp_complete != self.last_otp_complete {
+                self.last_otp_complete = otp_complete;
+                if otp_complete {
+                    self.status = "Одноразовый код введён".into();
+                } else {
+                    self.status = "Введите одноразовый код".into();
+                }
+            }
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(if self.otp.len() == 6 {
@@ -265,7 +302,7 @@ impl LauncherApp {
         ui.horizontal(|ui| {
             let connect = egui::Button::new(
                 egui::RichText::new(if self.running {
-                    "Подключение…"
+                    "     Подключение…"
                 } else {
                     "Подключиться"
                 })
@@ -277,14 +314,16 @@ impl LauncherApp {
             .corner_radius(8)
             .min_size(egui::vec2(0.0, 40.0));
             let otp_ready = !self.secret.trim().is_empty() || self.otp.len() == 6;
-            if ui
-                .add_enabled(!self.running && otp_ready, connect)
-                .clicked()
-            {
+            let connect_response = ui.add_enabled(!self.running && otp_ready, connect);
+            if self.running {
+                paint_spinner(ui, &connect_response, 18.0, egui::Color32::WHITE);
+            }
+            if connect_response.clicked() {
                 self.launch();
             }
             if ui
-                .add(
+                .add_enabled(
+                    !self.running,
                     egui::Button::new("Настройки")
                         .corner_radius(8)
                         .min_size(egui::vec2(0.0, 40.0)),
@@ -302,6 +341,7 @@ impl LauncherApp {
     }
 
     fn settings_content(&mut self, ui: &mut egui::Ui, palette: Palette) {
+        let controls_enabled = !self.running && self.file_dialog_result.is_none();
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.label(
@@ -316,7 +356,7 @@ impl LauncherApp {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                if back_button(ui).clicked() {
+                if back_button(ui, controls_enabled).clicked() {
                     self.show_settings = false;
                 }
             });
@@ -336,13 +376,21 @@ impl LauncherApp {
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    if !controls_enabled {
+                        ui.disable();
+                    }
                     let content_top = ui.cursor().top();
                     field(ui, "StoreFront URL", &mut self.config.storefront_url, false);
                     field(ui, "Название VDI", &mut self.config.vdi_name, false);
                     field(ui, "Логин", &mut self.config.username, false);
                     field(ui, "Пароль", &mut self.password, true);
                     field(ui, "TOTP-секрет", &mut self.secret, true);
-                    if path_field(ui, &mut self.config.citrix_path, palette) {
+                    if path_field(
+                        ui,
+                        &mut self.config.citrix_path,
+                        palette,
+                        self.file_dialog_result.is_some(),
+                    ) {
                         self.browse_for_citrix();
                     }
                     ui.cursor().top() - content_top
@@ -365,14 +413,15 @@ impl LauncherApp {
             .fill(palette.accent)
             .corner_radius(8)
             .min_size(egui::vec2(0.0, 40.0));
-            if ui.add(save).clicked() {
+            if ui.add_enabled(controls_enabled, save).clicked() {
                 self.status = match self.save() {
                     Ok(()) => "Настройки сохранены".into(),
                     Err(e) => format!("Ошибка сохранения: {e:#}"),
                 };
             }
             if ui
-                .add(
+                .add_enabled(
+                    controls_enabled,
                     egui::Button::new("Найти Citrix")
                         .corner_radius(8)
                         .min_size(egui::vec2(0.0, 40.0)),
@@ -388,11 +437,23 @@ impl LauncherApp {
     }
 
     fn next_step(&self) -> &'static str {
-        if self.running {
-            "Выполняется вход и подготовка рабочего стола"
+        if self.running && self.status.starts_with("Одноразовый") {
+            "Код готов, начинается безопасный вход"
+        } else if self.running && self.status.starts_with("Проверка логина") {
+            "Данные переданы, ожидайте результат авторизации"
+        } else if self.running && self.status.contains("Gateway") {
+            "Ожидайте завершения авторизации"
+        } else if self.running && self.status.contains("StoreFront") {
+            "Авторизация завершена, загружаются ресурсы"
+        } else if self.running && self.status.contains("Workspace") {
+            "Citrix Workspace принимает рабочий стол"
+        } else if self.running {
+            "Подготавливается выбранный рабочий стол"
         } else if self.status.starts_with("Ошибка") || self.status.contains("не найден")
         {
             "Проверьте настройки и повторите попытку"
+        } else if self.status.contains("открыт в Citrix Workspace") {
+            "Подключение передано Citrix; launcher можно закрыть"
         } else if self.secret.trim().is_empty() && self.otp.len() < 6 {
             "Введите код из приложения-аутентификатора"
         } else {
@@ -436,7 +497,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool) {
     ui.add_space(9.0);
 }
 
-fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette) -> bool {
+fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette, browsing: bool) -> bool {
     ui.label(
         egui::RichText::new("Путь до Citrix Workspace")
             .size(13.0)
@@ -460,9 +521,14 @@ fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette) -> bool {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let font_id = egui::TextStyle::Button.resolve(ui.style());
                 let text_color = ui.visuals().text_color();
+                let browse_label = if browsing {
+                    "     Открытие…"
+                } else {
+                    "Обзор…"
+                };
                 let text_width = ui.fonts_mut(|fonts| {
                     fonts
-                        .layout_no_wrap("Обзор…".into(), font_id, text_color)
+                        .layout_no_wrap(browse_label.into(), font_id, text_color)
                         .size()
                         .x
                 });
@@ -478,13 +544,15 @@ fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette) -> bool {
                             .frame(egui::Frame::NONE),
                     );
                 });
-                browse_clicked = ui
-                    .add(
-                        egui::Button::new("Обзор…")
-                            .corner_radius(5)
-                            .min_size(egui::vec2(0.0, 32.0)),
-                    )
-                    .clicked();
+                let browse_response = ui.add(
+                    egui::Button::new(browse_label)
+                        .corner_radius(5)
+                        .min_size(egui::vec2(0.0, 32.0)),
+                );
+                if browsing {
+                    paint_spinner(ui, &browse_response, 14.0, ui.visuals().text_color());
+                }
+                browse_clicked = browse_response.clicked();
             });
         });
     browse_clicked
@@ -506,8 +574,9 @@ fn pick_citrix_executable(current: &str) -> Option<std::path::PathBuf> {
     dialog.pick_file()
 }
 
-fn back_button(ui: &mut egui::Ui) -> egui::Response {
-    let response = ui.add(
+fn back_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
+    let response = ui.add_enabled(
+        enabled,
         egui::Button::new("     Назад")
             .corner_radius(8)
             .min_size(egui::vec2(0.0, 36.0)),
@@ -598,6 +667,13 @@ impl UiState {
         } else if status.contains("передана")
             || status.contains("сохранены")
             || status.contains("найден:")
+            || status.contains("введён")
+            || status.contains("рассчитан")
+            || status.contains("выполнена")
+            || status.contains("создан")
+            || status.contains("открыт")
+            || status.contains("запущен")
+            || status.contains("выбран")
         {
             Self::Success
         } else {
@@ -615,13 +691,37 @@ impl UiState {
     }
 }
 
-fn status_dot(ui: &mut egui::Ui, color: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 20.0), egui::Sense::hover());
-    ui.painter()
-        .circle_filled(egui::pos2(rect.center().x, rect.top() + 8.0), 4.0, color);
+fn status_indicator(ui: &mut egui::Ui, color: egui::Color32, busy: bool) {
+    if busy {
+        ui.add(egui::Spinner::new().size(12.0).color(color));
+    } else {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 20.0), egui::Sense::hover());
+        ui.painter()
+            .circle_filled(egui::pos2(rect.center().x, rect.top() + 8.0), 4.0, color);
+    }
 }
 
-fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette) {
+fn paint_spinner(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    left_offset: f32,
+    color: egui::Color32,
+) {
+    let center = egui::pos2(response.rect.left() + left_offset, response.rect.center().y);
+    let start = ui.input(|input| input.time) as f32 * 4.0;
+    let points = (0..=10)
+        .map(|index| {
+            let angle = start + 4.6 * index as f32 / 10.0;
+            center + 5.0 * egui::vec2(angle.cos(), angle.sin())
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, egui::Stroke::new(1.7, color)));
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(16));
+}
+
+fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette, enabled: bool) {
     let otp_id = ui.make_persistent_id("otp-input");
     if ui.memory(|memory| memory.has_focus(otp_id)) {
         ui.input_mut(|input| {
@@ -650,16 +750,20 @@ fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette) {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     let side_space = ((field_width - editor_width) / 2.0).max(0.0);
                     ui.add_space(side_space);
-                    let response = ui.add_sized(
-                        [editor_width, 48.0],
-                        egui::TextEdit::singleline(otp)
-                            .id(otp_id)
-                            .char_limit(6)
-                            .font(font.clone())
-                            .vertical_align(egui::Align::Center)
-                            .margin(egui::Margin::ZERO)
-                            .frame(egui::Frame::NONE),
-                    );
+                    let response = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            ui.add_sized(
+                                [editor_width, 48.0],
+                                egui::TextEdit::singleline(otp)
+                                    .id(otp_id)
+                                    .char_limit(6)
+                                    .font(font.clone())
+                                    .vertical_align(egui::Align::Center)
+                                    .margin(egui::Margin::ZERO)
+                                    .frame(egui::Frame::NONE),
+                            )
+                        })
+                        .inner;
                     ui.add_space(side_space);
                     response
                 },
@@ -676,11 +780,16 @@ fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette) {
         font,
         palette.secondary_text.gamma_multiply(0.45),
     );
-    let field_interaction = field.response.interact(egui::Sense::click_and_drag());
-    if field_interaction.clicked()
-        || field_interaction.dragged()
-        || response.clicked()
-        || response.dragged()
+    let field_interaction = field.response.interact(if enabled {
+        egui::Sense::click_and_drag()
+    } else {
+        egui::Sense::hover()
+    });
+    if enabled
+        && (field_interaction.clicked()
+            || field_interaction.dragged()
+            || response.clicked()
+            || response.dragged())
     {
         response.request_focus();
         if let Some(mut state) = egui::text_edit::TextEditState::load(ui.ctx(), response.id) {

@@ -21,32 +21,41 @@ pub fn run(request: LaunchRequest, tx: Sender<LaunchEvent>) {
 
 fn run_inner(req: LaunchRequest, tx: &Sender<LaunchEvent>) -> Result<()> {
     validate(&req.config)?;
-    let otp = if req.secret.trim().is_empty() {
-        req.manual_otp
-    } else {
+    let automatic_otp = !req.secret.trim().is_empty();
+    let otp = if automatic_otp {
         generate_totp(&req.secret)?
+    } else {
+        req.manual_otp
     };
     if otp.len() != 6 || !otp.chars().all(|c| c.is_ascii_digit()) {
         bail!("OTP должен состоять из 6 цифр");
     }
-    status(tx, "Авторизация в Citrix Gateway");
+    status(
+        tx,
+        if automatic_otp {
+            "Одноразовый код рассчитан автоматически"
+        } else {
+            "Одноразовый код введён"
+        },
+    );
+    let progress = |message: &str| status(tx, message);
     let session = network::authenticate(
         &req.config.storefront_url,
         &req.config.username,
         &req.password,
         &otp,
+        &progress,
     )?;
-    status(tx, &format!("Поиск {} в StoreFront", req.config.vdi_name));
     let names = vec![req.config.vdi_name.clone()];
     let data = req.config.data_dir()?;
-    status(tx, "Подготовка VDI и получение ICA");
     network::launch_vdi(
         &session,
         &names,
         &req.config.citrix_path,
         &data.join("launch.ica"),
+        &progress,
     )?;
-    status(tx, "VDI передана в Citrix Workspace");
+    status(tx, "Рабочий стол открыт в Citrix Workspace");
     Ok(())
 }
 

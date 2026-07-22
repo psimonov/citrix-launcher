@@ -70,6 +70,8 @@ The OTP is one real text-edit control, not six independent controls. It accepts 
 | Recoverable error | Explain failure in plain language | Correct input/settings or retry | Contextual |
 | Settings saved | Confirm save | Return or connect | Save remains available |
 
+During a connection attempt, the status region names the active protocol stage. The connect button and status marker show progress, while OTP editing and navigation to settings are disabled. During native Citrix executable selection, the settings form, navigation, and footer actions are disabled and the browse button shows progress.
+
 ## Design tokens
 
 - Spacing unit: `8 px`.
