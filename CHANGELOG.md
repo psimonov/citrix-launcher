@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-23
+
 ### Changed
 
 - Redesigned the GUI with a responsive connection screen, a bounded settings form, a six-digit OTP editor, native file selection, and cross-platform icon assets.

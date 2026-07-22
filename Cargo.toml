@@ -1,6 +1,6 @@
 [package]
 name = "citrix-vdi-launcher"
-version = "0.0.1"
+version = "1.0.0"
 edition = "2024"
 authors = ["Citrix VDI Launcher contributors"]
 description = "Browserless cross-platform Citrix Gateway and StoreFront VDI launcher"
