@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Added stage-specific connection feedback, progress indicators, and interaction locking while authentication, VDI preparation, or file selection is active.
 - Added cross-platform active ICA session monitoring so the GUI returns to its ready state after the desktop session closes.
 - Improved theme contrast for inputs, placeholders, secondary and disabled actions, cards, and long status messages, with consistent input padding.
+- Stabilized button geometry across idle, hover, and pressed states to prevent visual layout jumps.
 - Updated direct Rust dependencies and GitHub Actions to their latest stable releases.
 - Migrated the GUI to the eframe 0.35 application API and the Glow renderer.
 - Added a weekly and dependency-change RustSec audit workflow.

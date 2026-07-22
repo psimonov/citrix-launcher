@@ -993,12 +993,16 @@ fn configure_style(ctx: &egui::Context) {
             style.visuals.disabled_alpha = 0.65;
         }
         for widget in [
+            &mut style.visuals.widgets.noninteractive,
             &mut style.visuals.widgets.inactive,
             &mut style.visuals.widgets.hovered,
             &mut style.visuals.widgets.active,
             &mut style.visuals.widgets.open,
         ] {
             widget.corner_radius = 8.into();
+            widget.expansion = 0.0;
+            widget.fg_stroke.width = 1.0;
+            widget.bg_stroke.width = 1.0;
         }
     });
 }
