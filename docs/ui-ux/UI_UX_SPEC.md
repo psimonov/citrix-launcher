@@ -85,6 +85,14 @@ After an observed Citrix desktop session closes, the connection screen returns t
 - Border: `1 px`; focused input: `2 px` accent.
 - Status region: fixed minimum height sufficient for two wrapped message lines plus one guidance line.
 
+## Theme behavior
+
+- Follow the OS dark/light preference in normal operation.
+- Keep page, card, and input surfaces visually distinct in both themes.
+- Light-theme input borders and placeholder text must remain visible without looking like active content.
+- Disabled controls must remain legible while being clearly less prominent than enabled controls.
+- Debug builds may use `CITRIX_UI_PREVIEW_THEME=light` with `CITRIX_UI_PREVIEW=1` for deterministic visual review. `CITRIX_UI_PREVIEW_STATE=error` provides a fixed synthetic long-error state and never loads real configuration.
+
 ## Keyboard acceptance
 
 - Tab order follows visual order.

@@ -93,8 +93,14 @@ fn is_citrix_session_process(name: &str) -> bool {
 }
 impl LauncherApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        configure_style(&cc.egui_ctx);
         let preview = cfg!(debug_assertions) && std::env::var_os("CITRIX_UI_PREVIEW").is_some();
+        if preview
+            && std::env::var("CITRIX_UI_PREVIEW_THEME")
+                .is_ok_and(|theme| theme.eq_ignore_ascii_case("light"))
+        {
+            cc.egui_ctx.set_visuals(egui::Visuals::light());
+        }
+        configure_style(&cc.egui_ctx);
         let (config, password, secret, warning) = if preview {
             let mut config = AppConfig::default();
             config.storefront_url = "https://gateway.example/".into();
@@ -107,7 +113,7 @@ impl LauncherApp {
             let secret = config.load_secret().unwrap_or_default();
             (config, password, secret, warning)
         };
-        Self {
+        let mut app = Self {
             show_settings: !preview && !config.is_ready(),
             config,
             password,
@@ -121,7 +127,14 @@ impl LauncherApp {
             file_dialog_result: None,
             last_otp_complete: false,
             session_monitor: None,
+        };
+        if preview
+            && std::env::var("CITRIX_UI_PREVIEW_STATE")
+                .is_ok_and(|state| state.eq_ignore_ascii_case("error"))
+        {
+            app.status = "Ошибка: не удалось завершить подключение к рабочему столу. Проверьте параметры Citrix Gateway, доступность сети и сохранённые настройки, затем повторите попытку. Если проблема сохраняется, обратитесь к администратору инфраструктуры и сообщите время возникновения ошибки. Дополнительные данные не требуются.".into();
         }
+        app
     }
     fn save(&mut self) -> anyhow::Result<()> {
         if self.preview {
@@ -455,11 +468,23 @@ impl LauncherApp {
                         ui.disable();
                     }
                     let content_top = ui.cursor().top();
-                    field(ui, "StoreFront URL", &mut self.config.storefront_url, false);
-                    field(ui, "Название VDI", &mut self.config.vdi_name, false);
-                    field(ui, "Логин", &mut self.config.username, false);
-                    field(ui, "Пароль", &mut self.password, true);
-                    field(ui, "TOTP-секрет", &mut self.secret, true);
+                    field(
+                        ui,
+                        "StoreFront URL",
+                        &mut self.config.storefront_url,
+                        false,
+                        palette,
+                    );
+                    field(
+                        ui,
+                        "Название VDI",
+                        &mut self.config.vdi_name,
+                        false,
+                        palette,
+                    );
+                    field(ui, "Логин", &mut self.config.username, false, palette);
+                    field(ui, "Пароль", &mut self.password, true, palette);
+                    field(ui, "TOTP-секрет", &mut self.secret, true, palette);
                     if path_field(
                         ui,
                         &mut self.config.citrix_path,
@@ -559,16 +584,30 @@ fn success_check_icon(ui: &mut egui::Ui, color: egui::Color32) {
     );
 }
 
-fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool) {
+fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool, palette: Palette) {
     ui.label(egui::RichText::new(label).size(13.0).strong());
-    ui.add_sized(
+    let response = ui.add_sized(
         [ui.available_width(), 40.0],
         egui::TextEdit::singleline(value)
             .password(secret)
             .font(egui::FontId::proportional(16.0))
             .vertical_align(egui::Align::Center)
-            .margin(egui::Margin::symmetric(10, 0)),
+            .margin(egui::Margin::symmetric(10, 0))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette.input)
+                    .stroke(egui::Stroke::new(1.0, palette.border))
+                    .corner_radius(8),
+            ),
     );
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            8.0,
+            egui::Stroke::new(1.0, palette.accent),
+            egui::StrokeKind::Inside,
+        );
+    }
     ui.add_space(9.0);
 }
 
@@ -581,7 +620,7 @@ fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette, browsing:
     let width = ui.available_width();
     let mut browse_clicked = false;
     egui::Frame::new()
-        .fill(ui.visuals().text_edit_bg_color())
+        .fill(palette.input)
         .stroke(egui::Stroke::new(1.0, palette.border))
         .corner_radius(8)
         .inner_margin(egui::Margin {
@@ -686,8 +725,10 @@ fn back_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
 struct Palette {
     background: egui::Color32,
     card: egui::Color32,
+    input: egui::Color32,
     border: egui::Color32,
     secondary_text: egui::Color32,
+    placeholder: egui::Color32,
     accent: egui::Color32,
     success: egui::Color32,
     error: egui::Color32,
@@ -700,8 +741,10 @@ impl Palette {
             Self {
                 background: egui::Color32::from_rgb(20, 23, 29),
                 card: egui::Color32::from_rgb(29, 33, 41),
+                input: egui::Color32::from_rgb(8, 10, 13),
                 border: egui::Color32::from_rgb(51, 57, 68),
                 secondary_text: egui::Color32::from_rgb(163, 171, 184),
+                placeholder: egui::Color32::from_rgb(92, 99, 111),
                 accent: egui::Color32::from_rgb(64, 126, 255),
                 success: egui::Color32::from_rgb(65, 190, 118),
                 error: egui::Color32::from_rgb(239, 92, 92),
@@ -711,8 +754,10 @@ impl Palette {
             Self {
                 background: egui::Color32::from_rgb(244, 246, 249),
                 card: egui::Color32::WHITE,
-                border: egui::Color32::from_rgb(218, 223, 231),
+                input: egui::Color32::from_rgb(248, 249, 251),
+                border: egui::Color32::from_rgb(204, 211, 221),
                 secondary_text: egui::Color32::from_rgb(94, 104, 120),
+                placeholder: egui::Color32::from_rgb(128, 138, 153),
                 accent: egui::Color32::from_rgb(38, 103, 230),
                 success: egui::Color32::from_rgb(35, 153, 91),
                 error: egui::Color32::from_rgb(205, 50, 64),
@@ -814,7 +859,7 @@ fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette, enabled: boo
     let editor_width = glyph_width * 6.0 + 2.0;
     let field_width = (ui.available_width() - 4.0).max(0.0);
     let field = egui::Frame::new()
-        .fill(ui.visuals().text_edit_bg_color())
+        .fill(palette.input)
         .stroke(egui::Stroke::new(1.0, palette.border))
         .corner_radius(8)
         .show(ui, |ui| {
@@ -853,7 +898,7 @@ fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette, enabled: boo
         egui::Align2::LEFT_CENTER,
         remaining,
         font,
-        palette.secondary_text.gamma_multiply(0.45),
+        palette.placeholder,
     );
     let field_interaction = field.response.interact(if enabled {
         egui::Sense::click_and_drag()
@@ -930,6 +975,9 @@ fn configure_style(ctx: &egui::Context) {
         style.spacing.scroll.bar_inner_margin = 16.0;
         style.spacing.scroll.bar_outer_margin = 0.0;
         style.animation_time = 0.12;
+        if !style.visuals.dark_mode {
+            style.visuals.disabled_alpha = 0.65;
+        }
         for widget in [
             &mut style.visuals.widgets.inactive,
             &mut style.visuals.widgets.hovered,
