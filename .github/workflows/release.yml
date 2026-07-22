@@ -28,7 +28,7 @@ jobs:
       - run: cargo build --release --bins
       - shell: pwsh
         run: Compress-Archive -Path target/release/citrix-vdi-launcher.exe,target/release/citrix-vdi-cli.exe -DestinationPath citrix-vdi-launcher-windows-x86_64.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-x86_64
           path: citrix-vdi-launcher-windows-x86_64.zip
@@ -44,7 +44,7 @@ jobs:
       - run: cargo bundle --release --bin citrix-vdi-launcher
       - run: cp target/release/citrix-vdi-cli target/release/bundle/osx/citrix-vdi-launcher.app/Contents/MacOS/citrix-vdi-cli
       - run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/osx/citrix-vdi-launcher.app citrix-vdi-launcher-macos-native.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: citrix-vdi-launcher-macos-native.zip
@@ -60,7 +60,7 @@ jobs:
       - run: cargo install cargo-deb cargo-generate-rpm --locked
       - run: cargo deb --no-build
       - run: cargo generate-rpm
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-native-packages
           path: |
