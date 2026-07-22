@@ -36,7 +36,7 @@ Build and publish releases only in GitHub Actions after pushing a valid `vMAJOR.
 
 ### Secure Linux display backend baseline
 
-Use X11/XWayland until the latest stable eframe dependency chain upgrades `wayland-scanner` beyond its vulnerable `quick-xml 0.39` constraint. The repository carries a source-identical stable `wayland-scanner 0.31.10` backport whose dependency constraint is raised to patched stable `quick-xml 0.41`; do not suppress the high-severity RustSec advisories or use an unreleased Git dependency. Remove the vendored backport and revisit native Wayland as soon as a patched stable upstream release exists.
+Use X11/XWayland until the latest stable eframe dependency chain upgrades `wayland-scanner` beyond its vulnerable `quick-xml 0.39` constraint. The repository carries stable `wayland-scanner 0.31.10` with a minimal security backport: its dependency constraint is raised to patched stable `quick-xml 0.41`, and the renamed XML 1.0 content API is used at the single affected call site. Do not suppress the high-severity RustSec advisories or use an unreleased Git dependency. Remove the vendored backport and revisit native Wayland as soon as a patched stable upstream release exists.
 
 ### OS-standard configuration
 
