@@ -23,7 +23,7 @@ This directory is the canonical, vendor-neutral context package for continuing d
 
 ## Current baseline
 
-- Version: `0.1.0`.
+- Version: `0.0.1`.
 - Default branch: `main`.
 - Repository visibility: private.
 - GUI and CLI share one Rust library and one OS-standard configuration.

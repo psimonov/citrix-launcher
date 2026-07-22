@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2026-07-22
+## [0.0.1] - 2026-07-22
 
 ### Added
 
@@ -13,4 +13,3 @@ All notable changes to this project will be documented in this file.
 - Windows DPAPI, macOS Keychain, and Linux Secret Service integration.
 - Native Windows EXE, macOS app bundle, DEB, and RPM packaging.
 - Cross-platform application icon and automated release workflows.
-
