@@ -413,6 +413,8 @@ impl LauncherApp {
                 .add_enabled(
                     !self.running,
                     egui::Button::new("Настройки")
+                        .fill(palette.button)
+                        .stroke(egui::Stroke::new(1.0, palette.button_border))
                         .corner_radius(8)
                         .min_size(egui::vec2(0.0, 40.0)),
                 )
@@ -444,7 +446,7 @@ impl LauncherApp {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                if back_button(ui, controls_enabled).clicked() {
+                if back_button(ui, controls_enabled, palette).clicked() {
                     self.show_settings = false;
                 }
             });
@@ -523,6 +525,8 @@ impl LauncherApp {
                 .add_enabled(
                     controls_enabled,
                     egui::Button::new("Найти Citrix")
+                        .fill(palette.button)
+                        .stroke(egui::Stroke::new(1.0, palette.button_border))
                         .corner_radius(8)
                         .min_size(egui::vec2(0.0, 40.0)),
                 )
@@ -592,11 +596,11 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool, palet
             .password(secret)
             .font(egui::FontId::proportional(16.0))
             .vertical_align(egui::Align::Center)
-            .margin(egui::Margin::symmetric(10, 0))
             .frame(
                 egui::Frame::new()
                     .fill(palette.input)
                     .stroke(egui::Stroke::new(1.0, palette.border))
+                    .inner_margin(egui::Margin::symmetric(10, 0))
                     .corner_radius(8),
             ),
     );
@@ -660,6 +664,8 @@ fn path_field(ui: &mut egui::Ui, value: &mut String, palette: Palette, browsing:
                 });
                 let browse_response = ui.add(
                     egui::Button::new(browse_label)
+                        .fill(palette.button)
+                        .stroke(egui::Stroke::new(1.0, palette.button_border))
                         .corner_radius(5)
                         .min_size(egui::vec2(0.0, 32.0)),
                 );
@@ -688,10 +694,12 @@ fn pick_citrix_executable(current: &str) -> Option<std::path::PathBuf> {
     dialog.pick_file()
 }
 
-fn back_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
+fn back_button(ui: &mut egui::Ui, enabled: bool, palette: Palette) -> egui::Response {
     let response = ui.add_enabled(
         enabled,
         egui::Button::new("     Назад")
+            .fill(palette.button)
+            .stroke(egui::Stroke::new(1.0, palette.button_border))
             .corner_radius(8)
             .min_size(egui::vec2(0.0, 36.0)),
     );
@@ -729,6 +737,8 @@ struct Palette {
     border: egui::Color32,
     secondary_text: egui::Color32,
     placeholder: egui::Color32,
+    button: egui::Color32,
+    button_border: egui::Color32,
     accent: egui::Color32,
     success: egui::Color32,
     error: egui::Color32,
@@ -745,6 +755,8 @@ impl Palette {
                 border: egui::Color32::from_rgb(51, 57, 68),
                 secondary_text: egui::Color32::from_rgb(163, 171, 184),
                 placeholder: egui::Color32::from_rgb(92, 99, 111),
+                button: egui::Color32::from_rgb(57, 62, 72),
+                button_border: egui::Color32::from_rgb(82, 89, 101),
                 accent: egui::Color32::from_rgb(64, 126, 255),
                 success: egui::Color32::from_rgb(65, 190, 118),
                 error: egui::Color32::from_rgb(239, 92, 92),
@@ -758,6 +770,8 @@ impl Palette {
                 border: egui::Color32::from_rgb(204, 211, 221),
                 secondary_text: egui::Color32::from_rgb(94, 104, 120),
                 placeholder: egui::Color32::from_rgb(128, 138, 153),
+                button: egui::Color32::from_rgb(226, 231, 238),
+                button_border: egui::Color32::from_rgb(181, 191, 203),
                 accent: egui::Color32::from_rgb(38, 103, 230),
                 success: egui::Color32::from_rgb(35, 153, 91),
                 error: egui::Color32::from_rgb(205, 50, 64),

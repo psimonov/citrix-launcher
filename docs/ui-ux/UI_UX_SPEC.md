@@ -90,6 +90,8 @@ After an observed Citrix desktop session closes, the connection screen returns t
 - Follow the OS dark/light preference in normal operation.
 - Keep page, card, and input surfaces visually distinct in both themes.
 - Light-theme input borders and placeholder text must remain visible without looking like active content.
+- Text inputs keep a `10 px` horizontal content inset in both themes.
+- Secondary buttons use a distinct surface and border, especially in the light theme, without competing with the primary action.
 - Disabled controls must remain legible while being clearly less prominent than enabled controls.
 - Debug builds may use `CITRIX_UI_PREVIEW_THEME=light` with `CITRIX_UI_PREVIEW=1` for deterministic visual review. `CITRIX_UI_PREVIEW_STATE=error` provides a fixed synthetic long-error state and never loads real configuration.
 
