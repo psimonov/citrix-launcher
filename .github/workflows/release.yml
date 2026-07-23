@@ -39,15 +39,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --bins
-      - run: cargo install cargo-bundle --locked
-      - run: cargo bundle --release --bin citrix-vdi-launcher
-      - run: cp target/release/citrix-vdi-cli target/release/bundle/osx/citrix-vdi-launcher.app/Contents/MacOS/citrix-vdi-cli
-      - run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/osx/citrix-vdi-launcher.app citrix-vdi-launcher-macos-native.zip
+      - name: Build ad-hoc signed universal macOS app
+        run: ./packaging/build-macos.sh
+      - name: Package universal macOS app
+        run: |
+          mkdir macos-release
+          cp -R target/release/bundle/osx/citrix-vdi-launcher.app macos-release/
+          cp packaging/macos/install-macos.command packaging/macos/README-RU.txt macos-release/
+          chmod +x macos-release/install-macos.command
+          ditto -c -k --sequesterRsrc --keepParent macos-release citrix-vdi-launcher-macos-universal.zip
       - uses: actions/upload-artifact@v7
         with:
           name: macos
-          path: citrix-vdi-launcher-macos-native.zip
+          path: citrix-vdi-launcher-macos-universal.zip
 
   linux:
     needs: validate-tag

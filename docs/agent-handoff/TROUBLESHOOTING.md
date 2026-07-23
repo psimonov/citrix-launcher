@@ -40,7 +40,10 @@ Work from local and least-sensitive checks toward authorized live tests.
 
 - Windows: check Rust target/linker pairing (MSVC vs GNU).
 - Linux: install DBus, X11/Wayland, keyboard, GL, and `pkg-config` development packages used in CI.
-- macOS: build the `.app` on a native macOS runner; do not expect reliable native app signing/bundling from Windows.
+- macOS: build the universal `.app` on macOS and verify its ad-hoc signature.
+  Without a Developer ID certificate it cannot pass normal Gatekeeper
+  assessment; use the included per-app installer or Apple's documented
+  Privacy & Security → Open Anyway flow.
 - Compare local failures with `.github/workflows/ci.yml`, which is the canonical clean-runner recipe.
 
 ## Safe evidence format

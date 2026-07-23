@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "citrix-vdi-launcher"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1632,6 +1632,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "once_cell",
  "raw-window-handle",
+ "wayland-sys",
  "windows-sys 0.52.0",
  "x11-dl",
 ]

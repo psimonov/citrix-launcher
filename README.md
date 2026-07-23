@@ -88,11 +88,16 @@ Native Debian and RPM packages, built on Linux:
 ./packaging/build-linux.sh
 ```
 
-macOS app bundle, built on macOS:
+Universal macOS app bundle (Apple Silicon and Intel), built on macOS:
 
 ```text
 ./packaging/build-macos.sh
 ```
+
+macOS builds receive an ad-hoc signature because the project has no Apple
+Developer certificate. The release ZIP includes Russian instructions and an
+installer that removes the quarantine attribute only from this application;
+see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 GitHub Releases are built and published only by GitHub Actions after a SemVer tag such as `v1.2.3` is pushed. Local tools never publish releases.
 
@@ -102,7 +107,7 @@ Snap, Flatpak, and AppImage packages are intentionally not produced.
 
 - Windows releases are standalone EXE files and require no Rust or MinGW runtime.
 - macOS uses operating-system frameworks and Keychain.
-- Linux native packages use X11/XWayland and Secret Service components. Native Wayland is temporarily disabled until the stable upstream dependency chain includes the published `quick-xml` security fixes.
+- Linux native packages support both Wayland and X11/XWayland and use Secret Service components.
 - Citrix Workspace is the only application-level runtime requirement.
 
 ## Security

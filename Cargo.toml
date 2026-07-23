@@ -1,6 +1,6 @@
 [package]
 name = "citrix-vdi-launcher"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 authors = ["Citrix VDI Launcher contributors"]
 description = "Browserless cross-platform Citrix Gateway and StoreFront VDI launcher"
@@ -11,7 +11,7 @@ anyhow = "1.0.104"
 base64 = "0.22.1"
 clap = { version = "4.6.4", features = ["derive"] }
 directories = "6.0.0"
-eframe = { version = "0.35.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "x11"] }
+eframe = { version = "0.35.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "cookies", "rustls"] }
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
@@ -44,13 +44,6 @@ winresource = "0.1.31"
 # stable wayland-scanner still constrains quick-xml to the vulnerable 0.39 line.
 [patch.crates-io]
 wayland-scanner = { path = "vendor/wayland-scanner" }
-
-[package.metadata.bundle]
-name = "Citrix VDI Launcher"
-identifier = "ru.local.citrix-vdi-launcher"
-icon = ["assets/icons/citrix-vdi-launcher.icns"]
-category = "public.app-category.business"
-short_description = "Citrix VDI launcher without a browser"
 
 [package.metadata.deb]
 name = "citrix-vdi-launcher"

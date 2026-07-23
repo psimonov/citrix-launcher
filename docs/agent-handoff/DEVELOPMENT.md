@@ -52,7 +52,9 @@ cargo build --release --bins
 3. Update version and `CHANGELOG.md`, merge the release-ready code, and ensure `main` CI is green.
 4. Create and push an annotated SemVer tag such as `v0.2.0` from the release commit.
 5. Tag push is the only release trigger. Do not use local tooling, an AI agent, or manual workflow dispatch to build or publish a release.
-6. The Release workflow builds Windows ZIP, macOS app ZIP, DEB, and RPM on native runners.
+6. The Release workflow builds Windows ZIP, an ad-hoc signed universal macOS
+   app ZIP with a per-app quarantine-removal installer, DEB, and RPM on native
+   runners.
 7. Verify all assets and generated release notes in GitHub Releases.
 8. Never commit generated binaries or `target/`; builds belong in Releases.
 

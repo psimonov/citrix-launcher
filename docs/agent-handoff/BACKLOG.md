@@ -8,7 +8,8 @@ This is a prioritized technical backlog, not a promise of scope.
 - Add more parser fixtures synthesized from documented response shapes without production data.
 - Improve authentication challenge detection and actionable error messages.
 - Test GUI behavior, Citrix discovery, secret storage, and detached launch on each supported desktop environment.
-- Add release checksums and consider artifact signing/notarization strategy.
+- Add release checksums and define signing strategies for Windows, DEB, and RPM
+  artifacts.
 
 ## Medium priority
 
@@ -16,17 +17,22 @@ This is a prioritized technical backlog, not a promise of scope.
 - Make status text fully dynamic and localizable; consider an English/Russian localization layer.
 - Add accessibility and high-DPI tests for the GUI and icon.
 - Cache release packaging tools in GitHub Actions to reduce build time.
-- Evaluate universal macOS output (Apple Silicon and Intel) instead of the current native runner architecture artifact.
 - Document supported Citrix Workspace and Gateway/StoreFront version ranges after controlled testing.
-- Remove the vendored `wayland-scanner` security backport and re-enable native Wayland after a stable eframe/winit/wayland-scanner release accepts `quick-xml >=0.41.0`; rerun `cargo audit` and native GNOME/KDE tests. Until then Linux uses X11/XWayland to avoid RUSTSEC-2026-0194, RUSTSEC-2026-0195, and the unmaintained Wayland font-parser chain.
+- Remove the vendored `wayland-scanner` security backport after a stable
+  eframe/winit/wayland-scanner release accepts `quick-xml >=0.41.0`; rerun
+  `cargo audit` and native Wayland plus X11 tests.
 
 ## Known limitations
 
 - Direct protocol parsing is proven against one private deployment and may require adapters for others.
 - There is no automated end-to-end test because it would require live credentials and OTP.
-- Native packages are not yet signed/notarized.
+- Windows and Linux packages are not yet signed. macOS uses an ad-hoc signature
+  and a per-app quarantine workaround because no Developer ID certificate is
+  available.
 - Linux keyring availability varies by desktop session; headless environments may not provide Secret Service.
-- Native Wayland is temporarily disabled for dependency security; GNOME and KDE use XWayland, while MATE uses X11 directly.
+- Linux uses native Wayland where available and retains X11/XWayland fallback.
+  The vendored `wayland-scanner` constraint remains until patched stable
+  upstream support is available.
 - The current GUI toolkit is cross-platform and system-themed, but not a separate OS-native widget implementation for each platform.
 
 ## Definition of done for future changes

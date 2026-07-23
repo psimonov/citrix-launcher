@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-24
+
+### Fixed
+
+- Enabled matching Wayland window and OpenGL backends so the RPM GUI starts in
+  modern Wayland desktop sessions instead of failing while the CLI continues to
+  work.
+- Replaced the incomplete native-only macOS bundle with a correctly identified,
+  icon-bearing universal app containing both Apple Silicon and Intel binaries.
+- Added ad-hoc signing and a narrowly scoped per-application quarantine removal
+  helper for macOS installations without an Apple Developer certificate.
+
 ## [1.0.0] - 2026-07-23
 
 ### Changed
