@@ -1,42 +1,62 @@
 # Citrix VDI Launcher
 
-A cross-platform desktop and CLI application that connects to Citrix VDI through Citrix Gateway and StoreFront without opening a browser.
+English · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [简体中文](README.zh-CN.md) · [हिन्दी](README.hi.md) · [العربية](README.ar.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
+---
+
+A browserless desktop and CLI client for connecting to Citrix Gateway and StoreFront VDI resources.
+
+## Overview
+
+Citrix VDI Launcher is intended for users who need a direct, repeatable way to authenticate, discover an assigned desktop, download its ICA data, and start it with Citrix Workspace without opening a browser. The GUI and CLI use the same native Rust core and configuration.
+
+This project is independent and is not affiliated with or endorsed by Citrix Systems, Inc.
 
 ## Features
 
-- Direct Citrix Gateway and StoreFront network authentication.
+- Direct Citrix Gateway and StoreFront authentication.
 - Manual OTP entry or automatic TOTP generation from a stored secret.
 - Automatic VDI resource discovery and ICA launch.
-- GUI and CLI applications backed by the same configuration.
+- GUI and scriptable CLI backed by the same configuration.
 - Automatic Citrix Workspace discovery on supported operating systems.
-- Credentials protected by Windows DPAPI, macOS Keychain, or Linux Secret Service.
-- Citrix sessions remain active after the launcher is closed.
-- Native Windows EXE, macOS app bundle, Debian package, and RPM package outputs.
+- Credential protection through Windows DPAPI, macOS Keychain, or Linux Secret Service.
 - No browser, WebView, .NET, Node.js, Python, or OpenSSL runtime dependency.
 
-Citrix Workspace must be installed on the target computer.
+## Requirements
 
-## Configuration
+- Citrix Workspace installed on the target computer.
+- Access to a compatible Citrix Gateway or StoreFront deployment.
+- Windows x86-64, macOS Intel/Apple Silicon, or x86-64 Linux with Wayland or X11/XWayland.
+- Linux desktop integration requires Secret Service and the native libraries installed by the DEB/RPM package manager.
 
-The configuration file is created automatically on first launch. Its location follows each operating system's conventions:
+## Installation
 
-- Windows: `%APPDATA%\CitrixVdiLauncher\config.json`
-- macOS: `~/Library/Application Support/CitrixVdiLauncher/config.json`
-- Linux: `${XDG_CONFIG_HOME:-~/.config}/citrix-vdi-launcher/config.json`
+Download the package for your platform from [GitHub Releases](https://github.com/psimonov/citrix-launcher/releases/latest):
 
-Print the effective path:
+- Windows x86-64: `citrix-vdi-launcher-windows-x86_64.zip`;
+- Debian/Ubuntu x86-64: `citrix-vdi-launcher_<version>_amd64.deb`;
+- Fedora/RHEL-compatible x86-64: `citrix-vdi-launcher-<version>.x86_64.rpm`;
+- macOS Intel and Apple Silicon: `citrix-vdi-launcher-macos-universal.zip`.
+
+Linux ARM64 DEB and RPM artifacts are not yet published. Do not install x86-64 packages on ARM64 systems.
+
+Release assets are built and published by GitHub Actions from SemVer tags. GitHub displays the SHA-256 digest for each asset on the release page.
+
+## Quick start
+
+1. Install Citrix Workspace.
+2. Install or extract Citrix VDI Launcher for your platform.
+3. Start the GUI, enter the StoreFront URL, VDI resource name, username, password, and optional TOTP secret.
+4. Connect and complete OTP authentication when prompted.
+
+CLI example:
 
 ```text
-citrix-vdi-cli config path
+citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
+citrix-vdi-cli connect
 ```
 
-The Citrix Workspace executable is detected in standard installation directories and through `PATH`. Run detection manually with:
-
-```text
-citrix-vdi-cli detect-citrix
-```
-
-## CLI usage
+## Usage
 
 Show settings without exposing secrets:
 
@@ -44,26 +64,35 @@ Show settings without exposing secrets:
 citrix-vdi-cli config show
 ```
 
-Update settings:
+Store credentials or a TOTP secret:
 
 ```text
-citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli config set --password "password" --totp-secret "BASE32SECRET"
 ```
 
-Connect using a stored TOTP secret:
-
-```text
-citrix-vdi-cli connect
-```
-
-If no TOTP secret is stored, the CLI prompts for an OTP. It can also be supplied explicitly:
+Connect with an explicit one-time password:
 
 ```text
 citrix-vdi-cli connect --otp 123456
 ```
 
-## Development
+Locate Citrix Workspace manually:
+
+```text
+citrix-vdi-cli detect-citrix
+```
+
+## Configuration
+
+The configuration file is created on first launch:
+
+- Windows: `%APPDATA%\CitrixVdiLauncher\config.json`;
+- macOS: `~/Library/Application Support/CitrixVdiLauncher/config.json`;
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/citrix-vdi-launcher/config.json`.
+
+Print the effective path with `citrix-vdi-cli config path`. Secrets are stored through the operating system credential store rather than written to this JSON file.
+
+## Build and verification
 
 ```text
 cargo fmt --all -- --check
@@ -72,46 +101,16 @@ cargo test --all-targets
 cargo build --release --bins
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for repository guidelines.
-
-## Packaging
-
-Windows EXE files:
-
-```powershell
-.\packaging\build-windows.ps1
-```
-
-Native Debian and RPM packages, built on Linux:
-
-```text
-./packaging/build-linux.sh
-```
-
-Universal macOS app bundle (Apple Silicon and Intel), built on macOS:
-
-```text
-./packaging/build-macos.sh
-```
-
-macOS builds receive an ad-hoc signature because the project has no Apple
-Developer certificate. The release ZIP includes Russian instructions and an
-installer that removes the quarantine attribute only from this application;
-see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-GitHub Releases are built and published only by GitHub Actions after a SemVer tag such as `v1.2.3` is pushed. Local tools never publish releases.
-
-Snap, Flatpak, and AppImage packages are intentionally not produced.
-
-## Runtime dependencies
-
-- Windows releases are standalone EXE files and require no Rust or MinGW runtime.
-- macOS uses operating-system frameworks and Keychain.
-- Linux native packages support both Wayland and X11/XWayland and use Secret Service components.
-- Citrix Workspace is the only application-level runtime requirement.
+Platform packaging scripts are available under `packaging/`. Release publication is reserved for GitHub Actions triggered by a tag such as `v1.2.3`.
 
 ## Security
 
-Never commit credentials, OTP/TOTP secrets, ICA files, cookies, CSRF tokens, logs, or StoreFront response dumps. See [SECURITY.md](SECURITY.md).
+Never commit credentials, OTP/TOTP secrets, ICA files, cookies, CSRF tokens, logs, or StoreFront response dumps. Report vulnerabilities according to [SECURITY.md](SECURITY.md).
 
-This repository is publicly readable but proprietary. Public access does not grant permission to use, modify, or redistribute the software; see [LICENSE](LICENSE).
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Bug reports and reproducible compatibility reports are welcome in [GitHub Issues](https://github.com/psimonov/citrix-launcher/issues).
+
+## License
+
+Distributed under the [MIT License](LICENSE).
