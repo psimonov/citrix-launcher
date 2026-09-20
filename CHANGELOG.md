@@ -38,6 +38,12 @@ All notable changes to this project will be documented in this file.
   starts, and it never read process command lines because `sysinfo` does not
   collect them by default.
 
+### Security
+
+- Updated `rustls` to 0.23.45 (RUSTSEC-2026-0285), `webbrowser` to 1.2.4
+  (RUSTSEC-2026-0257), `event-listener` to 5.4.2 (RUSTSEC-2026-0221), and
+  `chacha20` to 0.10.2, which replaces a yanked release.
+
 ## [1.0.1] - 2026-07-24
 
 ### Fixed
