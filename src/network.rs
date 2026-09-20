@@ -333,62 +333,137 @@ pub fn authenticate(
     }
 }
 
-pub fn launch_vdi(
-    session: &GatewaySession,
-    names: &[String],
-    citrix_path: &str,
-    ica_path: &Path,
-    progress: &dyn Fn(&str),
-) -> Result<String> {
-    progress("Поиск рабочего стола в Citrix StoreFront…");
+/// A launchable desktop published by StoreFront.
+///
+/// `launch_url` and `launch_status_url` stay private: they are session-scoped
+/// StoreFront paths and must never be persisted or logged.
+#[derive(Clone, Debug)]
+pub struct Desktop {
+    pub id: String,
+    pub name: String,
+    pub hostname: String,
+    launch_url: String,
+    launch_status_url: String,
+}
+
+impl Desktop {
+    /// Stable key for configuration and UI selection, never the host name.
+    pub fn key(&self) -> &str {
+        if self.id.is_empty() {
+            &self.name
+        } else {
+            &self.id
+        }
+    }
+}
+
+/// Desktops the authenticated session may launch, in StoreFront order.
+pub fn list_desktops(session: &GatewaySession) -> Result<Vec<Desktop>> {
+    parse_desktops(&session.resources)
+}
+
+fn parse_desktops(resources_json: &str) -> Result<Vec<Desktop>> {
     let document: Value =
-        serde_json::from_str(&session.resources).context("Invalid StoreFront resources JSON")?;
-    let wanted: Vec<String> = names
-        .iter()
-        .map(|s| normalize(s))
-        .filter(|s| !s.is_empty())
-        .collect();
+        serde_json::from_str(resources_json).context("Invalid StoreFront resources JSON")?;
     let resources = document
         .get("resources")
         .and_then(Value::as_array)
         .context("StoreFront response has no resources array")?;
-    let resource = resources
+    Ok(resources
         .iter()
-        .find(|r| {
-            ["name", "desktophostname", "id"]
-                .iter()
-                .filter_map(|k| r.get(*k).and_then(Value::as_str))
-                .any(|candidate| {
-                    wanted
-                        .iter()
-                        .any(|w| normalize(candidate) == *w || normalize(candidate).contains(w))
-                })
+        .filter(|resource| is_desktop(resource))
+        .filter_map(|resource| {
+            let field = |key: &str| {
+                resource
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            let launch_url = field("launchurl");
+            let launch_status_url = field("launchstatusurl");
+            let id = field("id");
+            let name = field("name");
+            if launch_url.is_empty() || launch_status_url.is_empty() {
+                return None;
+            }
+            if id.is_empty() && name.is_empty() {
+                return None;
+            }
+            Some(Desktop {
+                id,
+                name,
+                hostname: field("desktophostname"),
+                launch_url,
+                launch_status_url,
+            })
         })
-        .with_context(|| {
-            format!(
-                "VDI not found. Available: {}",
-                resources
-                    .iter()
-                    .filter_map(|r| r.get("name").and_then(Value::as_str))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })?;
-    let display_name = resource
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("VDI")
-        .to_owned();
-    progress("Рабочий стол найден");
-    let status_path = resource
-        .get("launchstatusurl")
-        .and_then(Value::as_str)
-        .context("launchstatusurl missing")?;
-    let launch_path = resource
-        .get("launchurl")
-        .and_then(Value::as_str)
-        .context("launchurl missing")?;
-    let status_url = session.portal.join(status_path)?;
+        .collect())
+}
+
+fn is_desktop(resource: &Value) -> bool {
+    match resource.get("type").and_then(Value::as_str) {
+        Some(kind) => kind.to_ascii_lowercase().contains("desktop"),
+        // Deployments that omit the type field must not lose their resources.
+        None => true,
+    }
+}
+
+/// Resolve a configured name to exactly one desktop.
+///
+/// Matching is deliberately ordered and refuses ambiguity instead of silently
+/// launching the first similar resource.
+pub fn find_desktop<'a>(desktops: &'a [Desktop], wanted: &str) -> Result<&'a Desktop> {
+    let key = normalize(wanted);
+    if key.is_empty() {
+        bail!("Desktop name is empty");
+    }
+    let rules: [fn(&Desktop, &str) -> bool; 3] = [
+        |desktop, key| normalize(&desktop.id) == key,
+        |desktop, key| normalize(&desktop.name) == key || normalize(&desktop.hostname) == key,
+        |desktop, key| {
+            normalize(&desktop.name).contains(key)
+                || normalize(&desktop.hostname).contains(key)
+                || normalize(&desktop.id).contains(key)
+        },
+    ];
+    for rule in rules {
+        let matches: Vec<&Desktop> = desktops
+            .iter()
+            .filter(|desktop| rule(desktop, &key))
+            .collect();
+        match matches.len() {
+            0 => continue,
+            1 => return Ok(matches[0]),
+            _ => bail!(
+                "Desktop '{wanted}' matches several resources: {}",
+                display_names(matches.into_iter())
+            ),
+        }
+    }
+    bail!(
+        "Desktop '{wanted}' not found. Available: {}",
+        display_names(desktops.iter())
+    )
+}
+
+fn display_names<'a>(desktops: impl Iterator<Item = &'a Desktop>) -> String {
+    let names: Vec<&str> = desktops.map(|desktop| desktop.name.as_str()).collect();
+    if names.is_empty() {
+        "none".to_owned()
+    } else {
+        names.join(", ")
+    }
+}
+
+pub fn launch_resource(
+    session: &GatewaySession,
+    desktop: &Desktop,
+    citrix_path: &str,
+    ica_path: &Path,
+    progress: &dyn Fn(&str),
+) -> Result<()> {
+    let status_url = session.portal.join(&desktop.launch_status_url)?;
     progress("Подготовка рабочего стола к запуску…");
     let mut ready = false;
     for _ in 0..30 {
@@ -440,7 +515,7 @@ pub fn launch_vdi(
         bail!("VDI was not ready before launch timeout");
     }
     progress("Получение файла запуска ICA…");
-    let mut launch_url = session.portal.join(launch_path)?;
+    let mut launch_url = session.portal.join(&desktop.launch_url)?;
     launch_url
         .query_pairs_mut()
         .append_pair("CsrfToken", &session.storefront_csrf)
@@ -494,7 +569,7 @@ pub fn launch_vdi(
         .spawn()
         .with_context(|| format!("Failed to launch Citrix: {citrix_path}"))?;
     progress("Citrix Workspace запущен");
-    Ok(display_name)
+    Ok(())
 }
 
 fn normalize(value: &str) -> String {
@@ -576,10 +651,10 @@ fn sha256_with_iv(data: &[u8], mut h: [u32; 8]) -> [u8; 32] {
         p.push(0)
     }
     p.extend_from_slice(&bit_len.to_be_bytes());
-    for block in p.chunks_exact(64) {
+    for block in p.as_chunks::<64>().0 {
         let mut w = [0u32; 64];
-        for (i, c) in block.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes(c.try_into().unwrap())
+        for (i, c) in block.as_chunks::<4>().0.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*c)
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
@@ -625,6 +700,74 @@ fn sha256_with_iv(data: &[u8], mut h: [u32; 8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Synthetic StoreFront shapes only: never paste a captured response here.
+    const RESOURCES: &str = r#"{"resources":[
+        {"id":"Controller.Alpha","name":"ALPHA","type":"Citrix.MPS.Desktop",
+         "desktophostname":"alpha-host","launchurl":"/Resources/Alpha/Launch",
+         "launchstatusurl":"/Resources/Alpha/GetLaunchStatus"},
+        {"id":"Controller.Alpha2","name":"ALPHA-2","type":"Citrix.MPS.Desktop",
+         "desktophostname":"alpha2-host","launchurl":"/Resources/Alpha2/Launch",
+         "launchstatusurl":"/Resources/Alpha2/GetLaunchStatus"},
+        {"id":"Controller.Editor","name":"Editor","type":"Citrix.MPS.App.Editor",
+         "launchurl":"/Resources/Editor/Launch",
+         "launchstatusurl":"/Resources/Editor/GetLaunchStatus"}
+    ]}"#;
+
+    #[test]
+    fn lists_desktops_without_published_applications() {
+        let desktops = parse_desktops(RESOURCES).unwrap();
+        assert_eq!(
+            desktops.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+            ["ALPHA", "ALPHA-2"]
+        );
+    }
+
+    #[test]
+    fn keeps_resources_when_deployment_omits_type() {
+        let json =
+            r#"{"resources":[{"id":"a","name":"A","launchurl":"/l","launchstatusurl":"/s"}]}"#;
+        assert_eq!(parse_desktops(json).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn skips_resources_without_launch_paths() {
+        let json = r#"{"resources":[{"id":"a","name":"A","type":"Citrix.MPS.Desktop"}]}"#;
+        assert!(parse_desktops(json).unwrap().is_empty());
+    }
+
+    #[test]
+    fn prefers_exact_match_over_prefix_of_a_longer_name() {
+        let desktops = parse_desktops(RESOURCES).unwrap();
+        assert_eq!(
+            find_desktop(&desktops, "ALPHA").unwrap().id,
+            "Controller.Alpha"
+        );
+        assert_eq!(
+            find_desktop(&desktops, "alpha 2").unwrap().id,
+            "Controller.Alpha2"
+        );
+        assert_eq!(
+            find_desktop(&desktops, "Controller.Alpha2").unwrap().name,
+            "ALPHA-2"
+        );
+    }
+
+    #[test]
+    fn refuses_ambiguous_names_instead_of_guessing() {
+        let desktops = parse_desktops(RESOURCES).unwrap();
+        let error = find_desktop(&desktops, "alph").unwrap_err().to_string();
+        assert!(error.contains("several resources"), "{error}");
+        assert!(error.contains("ALPHA-2"), "{error}");
+    }
+
+    #[test]
+    fn reports_available_desktops_when_nothing_matches() {
+        let desktops = parse_desktops(RESOURCES).unwrap();
+        let error = find_desktop(&desktops, "missing").unwrap_err().to_string();
+        assert!(error.contains("ALPHA, ALPHA-2"), "{error}");
+    }
+
     #[test]
     fn parses_states() {
         let s = "hmac.states=[[-1,2,3,4,5,6,7,8],[9,10,11,12,13,14,15,16]]";

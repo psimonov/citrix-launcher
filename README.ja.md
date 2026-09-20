@@ -8,7 +8,7 @@
 
 ## 概要と機能
 
-認証、OTP/TOTP、VDI検出、ICAダウンロード、Citrix Workspace起動を行います。GUIとCLIはRustコアを共有し、秘密情報はWindows DPAPI、macOS Keychain、Linux Secret Serviceで保護します。Citrix Systems, Inc.とは無関係の独立プロジェクトです。
+認証、OTP/TOTP、VDI検出、ICAダウンロード、Citrix Workspace起動を行います。StoreFront が公開する任意のデスクトップを選択でき、1 回のサインインで複数のデスクトップを起動できます。GUIとCLIはRustコアを共有し、秘密情報はWindows DPAPI、macOS Keychain、Linux Secret Serviceで保護します。Citrix Systems, Inc.とは無関係の独立プロジェクトです。
 
 ## 要件とインストール
 
@@ -20,6 +20,8 @@ Citrix Workspace、互換Gateway/StoreFront、およびWindows x86-64、macOS In
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 `config show`、`config path`、`detect-citrix`、`--password`/`--totp-secret`保存も利用できます。秘密情報はsystem credential storeに保存されます。

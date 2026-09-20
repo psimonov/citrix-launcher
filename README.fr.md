@@ -8,7 +8,7 @@ Client desktop et CLI pour se connecter à Citrix Gateway et StoreFront VDI sans
 
 ## Présentation et fonctionnalités
 
-Il gère authentification, OTP/TOTP, découverte du VDI, téléchargement ICA et lancement de Citrix Workspace. GUI et CLI partagent un cœur Rust ; les secrets utilisent Windows DPAPI, macOS Keychain ou Linux Secret Service. Projet indépendant, non affilié à Citrix Systems, Inc.
+Il gère authentification, OTP/TOTP, découverte du VDI, téléchargement ICA et lancement de Citrix Workspace. Tout bureau publié par StoreFront peut être sélectionné, et plusieurs bureaux s'ouvrent après une seule authentification. GUI et CLI partagent un cœur Rust ; les secrets utilisent Windows DPAPI, macOS Keychain ou Linux Secret Service. Projet indépendant, non affilié à Citrix Systems, Inc.
 
 ## Prérequis et installation
 
@@ -20,6 +20,8 @@ Citrix Workspace, un Gateway/StoreFront compatible et Windows x86-64, macOS Inte
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 `config show`, `config path`, `detect-citrix` et le stockage de `--password`/`--totp-secret` sont également disponibles.

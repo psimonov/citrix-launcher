@@ -22,9 +22,45 @@ Use DPAPI on Windows and the platform keyring on macOS/Linux. Never store plaint
 
 Citrix Workspace owns the VDI session after ICA handoff; closing the launcher must not terminate Citrix.
 
-### One configured VDI display name
+### Desktop chosen from the published list
 
-Expose exactly one VDI-name setting. Do not maintain hidden aliases or alternative name lists. Resource matching may normalize superficial formatting, but it must remain explainable and driven by the configured name.
+Offer every desktop StoreFront publishes and let the user pick one; the
+configured name is the default selection, not the only launchable desktop. This
+replaces the earlier decision to expose exactly one VDI name, which forced a
+settings edit to reach a second desktop.
+
+The superseded rule still holds in one respect: there are no hidden aliases or
+alternative name lists. A desktop is identified by its StoreFront resource id,
+and name matching stays explainable — an exact id, then an exact name, then a
+substring, and an ambiguous name is reported with its candidates rather than
+resolved by picking the first similar resource.
+
+Cache only the resource id and display name of the desktops seen at the last
+sign-in, so the list is available before authenticating. Never cache
+`desktophostname`: it is an internal infrastructure name.
+
+### Session kept for the lifetime of the launcher window
+
+Keep the authenticated Gateway/StoreFront session in memory in the worker thread
+instead of discarding it after a launch, so several desktops can be opened from
+one sign-in. This matters because a one-time code cannot be reused: without it, a
+second desktop would require a new code, or a wait of up to 30 seconds for the
+next TOTP window. The session never reaches disk and dies with the process.
+
+If the gateway drops the session, the launcher signs in again silently when a
+TOTP seed is stored. Without a seed it reports that a new code is needed.
+
+### Session state observed, not remembered
+
+Derive "this desktop is open" from the operating system process table on every
+poll rather than from what the launcher itself launched. A Citrix process is
+started with the desktop's own ICA file and keeps that path in its command line,
+which identifies the desktop without any bookkeeping. This also shows sessions
+started outside the launcher, and it cannot go stale.
+
+Only processes that exist for the lifetime of a session may be consulted.
+`wfcrun32.exe` is excluded on Windows: it is the connection manager, it survives
+the session it started, and it keeps a stale ICA path.
 
 ### Native distribution only
 

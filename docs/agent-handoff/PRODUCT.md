@@ -11,7 +11,11 @@ Launching a Citrix VDI through a browser-based StoreFront portal requires repeti
 - Authenticate through network requests to Citrix Gateway and StoreFront.
 - Accept a manually entered six-digit OTP when no TOTP seed is configured.
 - Generate RFC 6238 TOTP locally from a configured Base32 seed when present.
-- Discover the requested desktop by its configured display name and request an ICA launch.
+- List the desktops published by StoreFront and launch the one the user selected;
+  the configured display name is the default selection.
+- Allow several desktops to be launched from a single sign-in for as long as the
+  launcher is open.
+- Report, per desktop, whether it currently has a Citrix session open.
 - Start the locally installed Citrix Workspace client with the ICA file.
 - Ensure the Citrix/VDI process survives launcher exit.
 - Auto-detect Citrix Workspace where possible while allowing an explicit path override.
@@ -22,9 +26,16 @@ Launching a Citrix VDI through a browser-based StoreFront portal requires repeti
 
 - A normal user interacts only with this application and Citrix Workspace.
 - If configuration is complete and a TOTP seed exists, connecting should require one action.
+- Selecting a desktop and launching it are separate: picking a card only changes
+  the selection, and the primary button performs the launch.
+- Launching a second desktop must not ask for another one-time code while the
+  launcher stays open.
 - If no seed exists, the application displays its own OTP input; CLI prompts on stdin.
-- Settings expose gateway/StoreFront URL, VDI display name, username, password, TOTP seed, and Citrix executable path.
-- Do not reintroduce browser settings, WebView settings, or alternative VDI-name lists.
+- Settings expose gateway/StoreFront URL, default desktop, username, password,
+  TOTP seed, Citrix executable path, and whether to close the launcher after a
+  successful handoff.
+- Do not reintroduce browser settings, WebView settings, or alternative name
+  lists for a single desktop.
 - The product currently uses Russian user-facing text and follows the system theme as far as the GUI toolkit supports it.
 
 ## Packaging contract
