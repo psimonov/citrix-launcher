@@ -16,6 +16,9 @@ This project is independent and is not affiliated with or endorsed by Citrix Sys
 
 - Direct Citrix Gateway and StoreFront authentication.
 - Manual OTP entry or automatic TOTP generation from a stored secret.
+- Choice of any desktop published by StoreFront, with several desktops launchable
+  from a single sign-in.
+- Per-desktop session state, including sessions started outside the launcher.
 - Automatic VDI resource discovery and ICA launch.
 - GUI and scriptable CLI backed by the same configuration.
 - Automatic Citrix Workspace discovery on supported operating systems.
@@ -46,8 +49,9 @@ Release assets are built and published by GitHub Actions from SemVer tags. GitHu
 
 1. Install Citrix Workspace.
 2. Install or extract Citrix VDI Launcher for your platform.
-3. Start the GUI, enter the StoreFront URL, VDI resource name, username, password, and optional TOTP secret.
+3. Start the GUI, enter the StoreFront URL, default desktop name, username, password, and optional TOTP secret.
 4. Connect and complete OTP authentication when prompted.
+5. After the first connection, pick any published desktop from the carousel and connect again without a new one-time code.
 
 CLI example:
 
@@ -74,6 +78,18 @@ Connect with an explicit one-time password:
 
 ```text
 citrix-vdi-cli connect --otp 123456
+```
+
+List the desktops StoreFront offers:
+
+```text
+citrix-vdi-cli desktops
+```
+
+Launch several desktops from a single sign-in:
+
+```text
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 Locate Citrix Workspace manually:

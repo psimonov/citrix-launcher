@@ -10,7 +10,7 @@
 
 ## نظرة عامة والميزات
 
-ينفذ authentication وOTP/TOTP واكتشاف VDI وتنزيل ICA وتشغيل Citrix Workspace. تشترك GUI وCLI في نواة Rust؛ وتحمي الأسرار عبر Windows DPAPI أو macOS Keychain أو Linux Secret Service. المشروع مستقل وغير تابع لـ Citrix Systems, Inc.
+ينفذ authentication وOTP/TOTP واكتشاف VDI وتنزيل ICA وتشغيل Citrix Workspace. يمكن اختيار أي سطح مكتب منشور في StoreFront وتشغيل عدة أسطح مكتب بعد تسجيل دخول واحد. تشترك GUI وCLI في نواة Rust؛ وتحمي الأسرار عبر Windows DPAPI أو macOS Keychain أو Linux Secret Service. المشروع مستقل وغير تابع لـ Citrix Systems, Inc.
 
 ## المتطلبات والتثبيت
 
@@ -24,6 +24,8 @@
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 <div dir="rtl">

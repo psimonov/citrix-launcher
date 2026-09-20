@@ -8,7 +8,7 @@ Desktop- и CLI-клиент для подключения к Citrix Gateway и 
 
 ## Обзор и возможности
 
-Приложение выполняет аутентификацию, OTP/TOTP, поиск назначенного VDI, загрузку ICA и запуск Citrix Workspace. GUI и CLI используют общее Rust-ядро; секреты защищаются через Windows DPAPI, macOS Keychain или Linux Secret Service. Проект независим и не аффилирован с Citrix Systems, Inc.
+Приложение выполняет аутентификацию, OTP/TOTP, поиск назначенного VDI, загрузку ICA и запуск Citrix Workspace. Можно выбрать любой рабочий стол, опубликованный в StoreFront, и запустить несколько столов после одного входа. GUI и CLI используют общее Rust-ядро; секреты защищаются через Windows DPAPI, macOS Keychain или Linux Secret Service. Проект независим и не аффилирован с Citrix Systems, Inc.
 
 ## Требования
 
@@ -24,6 +24,8 @@ Citrix Workspace, доступ к совместимому Gateway/StoreFront и
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 Дополнительно доступны `config show`, `config path`, `detect-citrix` и сохранение `--password`/`--totp-secret`.

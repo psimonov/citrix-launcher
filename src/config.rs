@@ -9,13 +9,30 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// A desktop remembered from the last successful StoreFront sign-in.
+///
+/// Only the stable key and the display name are cached. The desktop host name
+/// is deliberately not stored: it is an internal infrastructure name.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnownDesktop {
+    pub key: String,
+    pub name: String,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
     pub storefront_url: String,
+    /// Desktop selected for the next launch; also the fallback shown before the
+    /// first sign-in, when no desktop list has been cached yet.
     pub vdi_name: String,
     pub username: String,
     pub citrix_path: String,
+    /// Desktops offered by StoreFront during the previous session.
+    pub known_desktops: Vec<KnownDesktop>,
+    /// Quit the GUI once a desktop has been handed over to Citrix Workspace.
+    /// The Citrix session is detached and keeps running.
+    pub close_after_launch: bool,
     protected_password: String,
     protected_secret: String,
 }
@@ -29,6 +46,8 @@ impl Default for AppConfig {
             citrix_path: discover_citrix()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
+            known_desktops: Vec::new(),
+            close_after_launch: false,
             protected_password: String::new(),
             protected_secret: String::new(),
         }
@@ -99,6 +118,50 @@ impl AppConfig {
         let path = config_path()?;
         fs::create_dir_all(path.parent().unwrap())?;
         fs::write(path, serde_json::to_vec_pretty(self)?).context("Запись настроек")
+    }
+    /// Persist non-secret fields. Protected values are written back unchanged.
+    pub fn save(&self) -> Result<()> {
+        let path = config_path()?;
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(path, serde_json::to_vec_pretty(self)?).context("Запись настроек")
+    }
+    /// Replace the cached desktop list after a successful sign-in and keep the
+    /// selection valid if the previously chosen desktop disappeared.
+    pub fn remember_desktops(&mut self, desktops: Vec<KnownDesktop>) -> bool {
+        if desktops.is_empty() || self.known_desktops == desktops {
+            return false;
+        }
+        self.known_desktops = desktops;
+        if self.selected_desktop().is_none() {
+            self.vdi_name = self.known_desktops[0].name.clone();
+        }
+        true
+    }
+    /// The cached desktop matching the current selection, if it still exists.
+    pub fn selected_desktop(&self) -> Option<&KnownDesktop> {
+        let selected = self.vdi_name.trim();
+        if selected.is_empty() {
+            return None;
+        }
+        self.known_desktops
+            .iter()
+            .find(|desktop| desktop.key == selected || desktop.name == selected)
+    }
+    /// Desktops to offer in the UI: the cached list, or the configured default
+    /// alone when nothing has been cached yet.
+    pub fn desktop_choices(&self) -> Vec<KnownDesktop> {
+        if !self.known_desktops.is_empty() {
+            return self.known_desktops.clone();
+        }
+        let default = self.vdi_name.trim();
+        if default.is_empty() {
+            Vec::new()
+        } else {
+            vec![KnownDesktop {
+                key: default.to_owned(),
+                name: default.to_owned(),
+            }]
+        }
     }
     pub fn load_password(&self) -> Result<String> {
         #[cfg(windows)]

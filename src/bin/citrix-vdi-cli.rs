@@ -1,14 +1,13 @@
 use anyhow::{Context, Result, bail};
 use citrix_vdi_launcher::{
-    automation::{self, LaunchEvent, LaunchRequest},
-    config::{self, AppConfig},
+    automation::{self, LaunchCommand, LaunchEvent, LaunchRequest},
+    config::{self, AppConfig, KnownDesktop},
 };
 use clap::{Args, Parser, Subcommand};
 use std::{
     io::{self, Write},
     process::ExitCode,
-    sync::mpsc,
-    thread,
+    sync::mpsc::{Receiver, Sender},
 };
 
 #[derive(Parser)]
@@ -23,8 +22,20 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Подключиться, используя сохранённые настройки
+    /// Подключиться к рабочему столу из настроек
     Connect {
+        #[arg(long)]
+        otp: Option<String>,
+    },
+    /// Запустить один или несколько рабочих столов за один вход
+    Launch {
+        /// Названия рабочих столов; без аргументов используется стол из настроек
+        names: Vec<String>,
+        #[arg(long)]
+        otp: Option<String>,
+    },
+    /// Показать рабочие столы, доступные в Citrix StoreFront
+    Desktops {
         #[arg(long)]
         otp: Option<String>,
     },
@@ -56,6 +67,9 @@ struct SetArgs {
     password: Option<String>,
     #[arg(long = "totp-secret")]
     totp_secret: Option<String>,
+    /// Закрывать GUI после передачи рабочего стола в Citrix Workspace
+    #[arg(long = "close-after-launch")]
+    close_after_launch: Option<bool>,
 }
 
 fn main() -> ExitCode {
@@ -69,7 +83,9 @@ fn main() -> ExitCode {
 }
 fn execute() -> Result<()> {
     match Cli::parse().command {
-        Command::Connect { otp } => connect(otp),
+        Command::Connect { otp } => launch(Vec::new(), otp),
+        Command::Launch { names, otp } => launch(names, otp),
+        Command::Desktops { otp } => desktops(otp),
         Command::DetectCitrix => {
             let p = config::discover_citrix().context("Citrix Workspace не найден")?;
             println!("{}", p.display());
@@ -86,14 +102,21 @@ fn execute() -> Result<()> {
                     eprintln!("Предупреждение: {w}")
                 }
                 println!(
-                    "StoreFront: {}\nVDI: {}\nЛогин: {}\nCitrix: {}\nПароль сохранён: {}\nTOTP-секрет сохранён: {}",
+                    "StoreFront: {}\nVDI: {}\nЛогин: {}\nCitrix: {}\nПароль сохранён: {}\nTOTP-секрет сохранён: {}\nЗакрывать после запуска: {}",
                     c.storefront_url,
                     c.vdi_name,
                     c.username,
                     c.citrix_path,
                     !c.load_password()?.is_empty(),
-                    !c.load_secret()?.is_empty()
+                    !c.load_secret()?.is_empty(),
+                    c.close_after_launch
                 );
+                if !c.known_desktops.is_empty() {
+                    println!("Известные рабочие столы:");
+                    for desktop in &c.known_desktops {
+                        println!("  {}", desktop.name);
+                    }
+                }
                 Ok(())
             }
             ConfigCommand::Set(args) => set_config(args),
@@ -122,6 +145,9 @@ fn set_config(args: SetArgs) -> Result<()> {
     if let Some(v) = args.totp_secret {
         secret = v
     }
+    if let Some(v) = args.close_after_launch {
+        c.close_after_launch = v
+    }
     if c.citrix_path.is_empty() {
         c.refresh_citrix_path();
     }
@@ -132,18 +158,27 @@ fn set_config(args: SetArgs) -> Result<()> {
     );
     Ok(())
 }
-fn connect(otp: Option<String>) -> Result<()> {
-    let (c, w) = AppConfig::load();
-    if let Some(w) = w {
-        eprintln!("Предупреждение: {w}")
+
+/// A worker plus the one-time code needed for its first sign-in.
+struct Worker {
+    config: AppConfig,
+    commands: Sender<LaunchCommand>,
+    events: Receiver<LaunchEvent>,
+    manual_otp: String,
+}
+
+fn start(otp: Option<String>) -> Result<Worker> {
+    let (config, warning) = AppConfig::load();
+    if let Some(warning) = warning {
+        eprintln!("Предупреждение: {warning}")
     }
-    let password = c.load_password()?;
-    let secret = c.load_secret()?;
-    if c.username.trim().is_empty() || password.is_empty() {
+    let password = config.load_password()?;
+    let secret = config.load_secret()?;
+    if config.username.trim().is_empty() || password.is_empty() {
         bail!("Сначала задайте логин и пароль через `citrix-vdi-cli config set`");
     }
-    let manual = match (secret.is_empty(), otp) {
-        (true, Some(v)) => v,
+    let manual_otp = match (secret.trim().is_empty(), otp) {
+        (_, Some(v)) => v,
         (true, None) => {
             print!("OTP: ");
             io::stdout().flush()?;
@@ -151,25 +186,86 @@ fn connect(otp: Option<String>) -> Result<()> {
             io::stdin().read_line(&mut v)?;
             v.trim().to_owned()
         }
-        (_, Some(v)) => v,
-        (_, None) => String::new(),
+        (false, None) => String::new(),
     };
-    let request = LaunchRequest {
-        config: c,
-        password,
-        secret,
-        manual_otp: manual,
-    };
-    let (tx, rx) = mpsc::channel();
-    let worker = thread::spawn(move || automation::run(request, tx));
-    for event in rx {
-        match event {
-            LaunchEvent::Status(s) => println!("{s}"),
-            LaunchEvent::Finished(result) => result?,
+    let (tx, events) = std::sync::mpsc::channel();
+    let commands = automation::spawn(
+        LaunchRequest {
+            config: config.clone(),
+            password,
+            secret,
+        },
+        tx,
+    );
+    Ok(Worker {
+        config,
+        commands,
+        events,
+        manual_otp,
+    })
+}
+
+impl Worker {
+    /// Run one command to completion, printing progress as it arrives.
+    fn wait(&mut self) -> Result<()> {
+        loop {
+            let Ok(event) = self.events.recv() else {
+                bail!("Поток подключения аварийно завершён")
+            };
+            match event {
+                LaunchEvent::Status(s) => println!("{s}"),
+                LaunchEvent::Desktops(list) => self.remember(list),
+                LaunchEvent::Launched { .. } => {}
+                LaunchEvent::Finished(result) => return result,
+            }
         }
     }
-    worker
-        .join()
-        .map_err(|_| anyhow::anyhow!("Поток подключения аварийно завершён"))?;
+    fn remember(&mut self, desktops: Vec<KnownDesktop>) {
+        if self.config.remember_desktops(desktops)
+            && let Err(error) = self.config.save()
+        {
+            eprintln!("Предупреждение: не удалось сохранить список столов: {error:#}");
+        }
+    }
+    fn send(&self, command: LaunchCommand) -> Result<()> {
+        self.commands
+            .send(command)
+            .map_err(|_| anyhow::anyhow!("Поток подключения аварийно завершён"))
+    }
+}
+
+fn launch(names: Vec<String>, otp: Option<String>) -> Result<()> {
+    let mut worker = start(otp)?;
+    let targets = if names.is_empty() {
+        let default = worker.config.vdi_name.trim().to_owned();
+        if default.is_empty() {
+            bail!("Укажите рабочий стол или задайте его через `citrix-vdi-cli config set --vdi`");
+        }
+        vec![default]
+    } else {
+        names
+    };
+    // One sign-in serves every target: the worker keeps the session open.
+    let manual_otp = worker.manual_otp.clone();
+    for target in targets {
+        worker.send(LaunchCommand::Launch {
+            key: target.clone(),
+            manual_otp: manual_otp.clone(),
+        })?;
+        worker
+            .wait()
+            .with_context(|| format!("Запуск рабочего стола «{target}»"))?;
+    }
+    Ok(())
+}
+
+fn desktops(otp: Option<String>) -> Result<()> {
+    let mut worker = start(otp)?;
+    let manual_otp = worker.manual_otp.clone();
+    worker.send(LaunchCommand::Connect { manual_otp })?;
+    worker.wait()?;
+    for desktop in &worker.config.known_desktops {
+        println!("{}", desktop.name);
+    }
     Ok(())
 }

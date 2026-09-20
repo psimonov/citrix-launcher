@@ -8,7 +8,7 @@
 
 ## परिचय और विशेषताएँ
 
-यह authentication, OTP/TOTP, VDI discovery, ICA download और Citrix Workspace launch करता है। GUI और CLI एक Rust core साझा करते हैं; secrets Windows DPAPI, macOS Keychain या Linux Secret Service में सुरक्षित रहते हैं। यह स्वतंत्र project है और Citrix Systems, Inc. से संबद्ध नहीं।
+यह authentication, OTP/TOTP, VDI discovery, ICA download और Citrix Workspace launch करता है। StoreFront पर published कोई भी desktop चुना जा सकता है, और एक ही sign-in के बाद कई desktop शुरू किए जा सकते हैं। GUI और CLI एक Rust core साझा करते हैं; secrets Windows DPAPI, macOS Keychain या Linux Secret Service में सुरक्षित रहते हैं। यह स्वतंत्र project है और Citrix Systems, Inc. से संबद्ध नहीं।
 
 ## आवश्यकताएँ और स्थापना
 
@@ -20,6 +20,8 @@ Citrix Workspace, compatible Gateway/StoreFront और Windows x86-64, macOS Int
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 `config show`, `config path`, `detect-citrix` और `--password`/`--totp-secret` storage भी उपलब्ध हैं। Secrets system credential store में रहते हैं।

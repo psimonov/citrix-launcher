@@ -13,6 +13,13 @@ This is a prioritized technical backlog, not a promise of scope.
 
 ## Medium priority
 
+- Verify the session-process names on macOS and Linux. The Windows list is
+  confirmed (`Citrix.DesktopViewer.App` carries the ICA path, `wfcrun32` outlives
+  its session and is excluded); the `Citrix Viewer` and `wfica` entries are
+  assumed from the executables the launcher starts. Confirm they exit with the
+  session and expose the ICA path, otherwise per-desktop state degrades to a
+  single aggregate signal there.
+- Consider showing published applications, not only desktops, in the resource list.
 - Add configuration schema/version migration tests.
 - Make status text fully dynamic and localizable; consider an English/Russian localization layer.
 - Add accessibility and high-DPI tests for the GUI and icon.

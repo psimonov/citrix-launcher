@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use citrix_vdi_launcher::automation::{self, LaunchEvent, LaunchRequest};
-use citrix_vdi_launcher::config::AppConfig;
+use citrix_vdi_launcher::automation::{self, LaunchCommand, LaunchEvent, LaunchRequest};
+use citrix_vdi_launcher::config::{AppConfig, KnownDesktop};
 use eframe::egui;
-use std::sync::mpsc::{self, Receiver};
+use std::collections::HashSet;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 fn main() -> eframe::Result<()> {
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icons/icon-256.png"))
@@ -29,67 +30,116 @@ struct LauncherApp {
     show_settings: bool,
     running: bool,
     events: Option<Receiver<LaunchEvent>>,
+    /// Kept for the lifetime of the session so several desktops can be launched
+    /// from a single sign-in. Dropped when settings change.
+    commands: Option<Sender<LaunchCommand>>,
+    desktops: Vec<KnownDesktop>,
+    selected: Option<usize>,
+    /// Index of the leftmost visible card.
+    carousel_offset: usize,
+    /// Desktops with a Citrix session open right now, refreshed every second.
+    open_desktops: HashSet<String>,
     preview: bool,
     settings_can_scroll: bool,
     file_dialog_result: Option<Receiver<Option<std::path::PathBuf>>>,
     last_otp_complete: bool,
-    session_monitor: Option<SessionMonitor>,
+    session_monitor: SessionMonitor,
+    /// Set when "close after launch" is on: the moment the window should quit,
+    /// delayed just enough for the final status to be readable.
+    close_at: Option<std::time::Instant>,
 }
 
+/// Watches which desktops currently have a Citrix session open.
 struct SessionMonitor {
     system: sysinfo::System,
-    started_at: std::time::Instant,
     last_check: std::time::Instant,
-    active_seen: bool,
 }
 
 impl SessionMonitor {
     fn new() -> Self {
-        let now = std::time::Instant::now();
         Self {
             system: sysinfo::System::new(),
-            started_at: now,
-            last_check: now - std::time::Duration::from_secs(1),
-            active_seen: false,
+            last_check: std::time::Instant::now() - std::time::Duration::from_secs(1),
         }
     }
 
-    fn poll(&mut self) -> SessionState {
+    /// Once per second, the command lines of live Citrix session processes.
+    fn poll(&mut self) -> Option<Vec<String>> {
         if self.last_check.elapsed() < std::time::Duration::from_secs(1) {
-            return SessionState::Waiting;
+            return None;
         }
         self.last_check = std::time::Instant::now();
-        self.system
-            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        let active = self
-            .system
-            .processes()
-            .values()
-            .any(|process| is_citrix_session_process(&process.name().to_string_lossy()));
-        if active {
-            self.active_seen = true;
-            SessionState::Active
-        } else if self.active_seen {
-            SessionState::Closed
-        } else if self.started_at.elapsed() >= std::time::Duration::from_secs(30) {
-            SessionState::NotObserved
-        } else {
-            SessionState::Waiting
-        }
+        // `refresh_processes` does not collect command lines, which is exactly
+        // what the per-desktop match needs; ask for them and nothing else.
+        // `OnlyIfNotSet` reads each command line once, when the process appears.
+        self.system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::OnlyIfNotSet),
+        );
+        Some(
+            self.system
+                .processes()
+                .values()
+                .filter(|process| is_citrix_session_process(&process.name().to_string_lossy()))
+                .map(|process| {
+                    process
+                        .cmd()
+                        .iter()
+                        .map(|argument| argument.to_string_lossy().to_lowercase())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect(),
+        )
     }
 }
 
-enum SessionState {
-    Waiting,
-    Active,
-    Closed,
-    NotObserved,
+/// Keys whose ICA file is still referenced by a live Citrix process.
+///
+/// The launcher itself starts Citrix with the desktop's own ICA file, so the
+/// path is something this application controls rather than a client-specific
+/// detail. That keeps the match meaningful on every platform. When a client
+/// does not expose the path, the result is empty and callers fall back to the
+/// aggregate "any session process" signal.
+fn running_keys<'a>(
+    keys: impl IntoIterator<Item = &'a String>,
+    command_lines: &[String],
+) -> HashSet<String> {
+    keys.into_iter()
+        .filter(|key| {
+            let file = automation::ica_file_name(key).to_lowercase();
+            command_lines
+                .iter()
+                .any(|command_line| command_line.contains(&file))
+        })
+        .cloned()
+        .collect()
 }
 
+/// Processes that exist only while a desktop session is open.
+///
+/// Verified on Windows: `Citrix.DesktopViewer.App.exe` and `wfica32.exe` appear
+/// with the session and disappear when the desktop is disconnected, and the
+/// former carries the ICA path. `wfcrun32.exe` is deliberately excluded — it is
+/// the connection manager, it survives the session it started, and it keeps a
+/// stale ICA path in its command line.
+///
+/// The macOS (`Citrix Viewer`) and Linux (`wfica`) entries are the executables
+/// the launcher starts itself and have not been verified on those platforms
+/// yet; if one of them turns out to outlive its session, it belongs here no
+/// more than `wfcrun32.exe` does.
 fn is_citrix_session_process(name: &str) -> bool {
-    ["wfica32.exe", "wfica32", "wfica", "Citrix Viewer"]
-        .iter()
-        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+    [
+        "Citrix.DesktopViewer.App.exe",
+        "Citrix.DesktopViewer.App",
+        "wfica32.exe",
+        "wfica32",
+        "wfica",
+        "Citrix Viewer",
+    ]
+    .iter()
+    .any(|candidate| name.eq_ignore_ascii_case(candidate))
 }
 impl LauncherApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -104,8 +154,14 @@ impl LauncherApp {
         let (config, password, secret, warning) = if preview {
             let mut config = AppConfig::default();
             config.storefront_url = "https://gateway.example/".into();
-            config.vdi_name = "MY-DESKTOP".into();
             config.username = "user".into();
+            config.known_desktops = preview_desktops();
+            config.close_after_launch = std::env::var_os("CITRIX_UI_PREVIEW_CLOSE").is_some();
+            config.vdi_name = config
+                .known_desktops
+                .first()
+                .map(|desktop| desktop.name.clone())
+                .unwrap_or_else(|| "MY-DESKTOP".into());
             (config, "preview-password".into(), String::new(), None)
         } else {
             let (config, warning) = AppConfig::load();
@@ -113,6 +169,8 @@ impl LauncherApp {
             let secret = config.load_secret().unwrap_or_default();
             (config, password, secret, warning)
         };
+        let desktops = config.desktop_choices();
+        let selected = selected_index(&config, &desktops);
         let mut app = Self {
             show_settings: !preview && !config.is_ready(),
             config,
@@ -122,12 +180,24 @@ impl LauncherApp {
             status: warning.unwrap_or_else(|| "Готово к подключению".into()),
             running: false,
             events: None,
+            commands: None,
+            desktops,
+            selected,
+            carousel_offset: 0,
+            open_desktops: HashSet::new(),
             preview,
             settings_can_scroll: true,
             file_dialog_result: None,
             last_otp_complete: false,
-            session_monitor: None,
+            session_monitor: SessionMonitor::new(),
+            close_at: None,
         };
+        if preview
+            && std::env::var("CITRIX_UI_PREVIEW_STATE")
+                .is_ok_and(|state| state.eq_ignore_ascii_case("settings"))
+        {
+            app.show_settings = true;
+        }
         if preview
             && std::env::var("CITRIX_UI_PREVIEW_STATE")
                 .is_ok_and(|state| state.eq_ignore_ascii_case("error"))
@@ -142,8 +212,39 @@ impl LauncherApp {
         }
         self.config.save_with_secrets(&self.password, &self.secret)
     }
+    /// Desktop the buttons act on. `None` disables connecting.
+    fn selected_desktop(&self) -> Option<&KnownDesktop> {
+        self.selected.and_then(|index| self.desktops.get(index))
+    }
+
+    fn select(&mut self, index: usize) {
+        if let Some(desktop) = self.desktops.get(index) {
+            self.selected = Some(index);
+            self.config.vdi_name = desktop.name.clone();
+        }
+    }
+
+    /// Replace the cached list after a sign-in, keeping the selection on the
+    /// same desktop when it is still published.
+    fn apply_desktops(&mut self, desktops: Vec<KnownDesktop>) {
+        if self.config.remember_desktops(desktops)
+            && !self.preview
+            && let Err(error) = self.config.save()
+        {
+            self.status = format!("Не удалось сохранить список столов: {error:#}");
+        }
+        self.desktops = self.config.desktop_choices();
+        self.selected = selected_index(&self.config, &self.desktops);
+        self.clamp_carousel();
+    }
+
+    fn clamp_carousel(&mut self) {
+        self.carousel_offset = self
+            .carousel_offset
+            .min(self.desktops.len().saturating_sub(1));
+    }
+
     fn launch(&mut self) {
-        self.session_monitor = None;
         if self.preview {
             let (tx, rx) = mpsc::channel();
             self.events = Some(rx);
@@ -176,21 +277,47 @@ impl LauncherApp {
             self.show_settings = true;
             return;
         }
+        let Some(key) = self.selected_desktop().map(|desktop| desktop.key.clone()) else {
+            self.status = "Выберите рабочий стол".into();
+            return;
+        };
         if self.secret.trim().is_empty() && self.otp.trim().is_empty() {
             self.status = "Введите OTP".into();
             return;
         }
-        let request = LaunchRequest {
-            config: self.config.clone(),
-            password: self.password.clone(),
-            secret: self.secret.clone(),
+        if self.commands.is_none() {
+            let (tx, rx) = mpsc::channel();
+            self.events = Some(rx);
+            self.commands = Some(automation::spawn(
+                LaunchRequest {
+                    config: self.config.clone(),
+                    password: self.password.clone(),
+                    secret: self.secret.clone(),
+                },
+                tx,
+            ));
+        }
+        let command = LaunchCommand::Launch {
+            key,
             manual_otp: self.otp.trim().to_owned(),
         };
-        let (tx, rx) = mpsc::channel();
-        self.events = Some(rx);
-        self.running = true;
-        self.status = "Подключение к Citrix Gateway…".into();
-        std::thread::spawn(move || automation::run(request, tx));
+        match self.commands.as_ref().map(|tx| tx.send(command)) {
+            Some(Ok(())) => {
+                self.running = true;
+                self.status = "Подключение к Citrix Gateway…".into();
+            }
+            _ => {
+                // The worker died; the next attempt starts a fresh one.
+                self.end_session();
+                self.status = "Поток подключения недоступен. Повторите попытку".into();
+            }
+        }
+    }
+
+    /// Forget the authenticated session, e.g. after settings changed.
+    fn end_session(&mut self) {
+        self.commands = None;
+        self.events = None;
     }
 
     fn browse_for_citrix(&mut self) {
@@ -207,19 +334,30 @@ impl LauncherApp {
 }
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if let Some(monitor) = &mut self.session_monitor {
-            match monitor.poll() {
-                SessionState::Closed => {
-                    self.status = "Готово к подключению".into();
-                    self.session_monitor = None;
-                }
-                SessionState::NotObserved => self.session_monitor = None,
-                SessionState::Waiting | SessionState::Active => {
-                    ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_secs(1));
-                }
+        if let Some(deadline) = self.close_at {
+            if std::time::Instant::now() >= deadline {
+                // Citrix owns the session now, so quitting cannot disturb it.
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            } else {
+                ui.ctx()
+                    .request_repaint_after(deadline - std::time::Instant::now());
             }
         }
+        if !self.preview
+            && let Some(command_lines) = self.session_monitor.poll()
+        {
+            let open = running_keys(
+                self.desktops.iter().map(|desktop| &desktop.key),
+                &command_lines,
+            );
+            // The last desktop was closed: the previous "opened" status is stale.
+            if open.is_empty() && !self.open_desktops.is_empty() && !self.running {
+                self.status = "Готово к подключению".into();
+            }
+            self.open_desktops = open;
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs(1));
         if let Some(rx) = &self.file_dialog_result {
             match rx.try_recv() {
                 Ok(Some(path)) => {
@@ -241,22 +379,34 @@ impl eframe::App for LauncherApp {
                 }
             }
         }
+        let mut incoming = Vec::new();
         if let Some(rx) = &self.events {
             while let Ok(event) = rx.try_recv() {
-                match event {
-                    LaunchEvent::Status(s) => self.status = s,
-                    LaunchEvent::Finished(r) => {
-                        self.running = false;
-                        self.otp.clear();
-                        self.last_otp_complete = false;
-                        self.status = match r {
-                            Ok(()) => {
-                                self.session_monitor = Some(SessionMonitor::new());
-                                "Рабочий стол открыт в Citrix Workspace".into()
+                incoming.push(event);
+            }
+        }
+        for event in incoming {
+            match event {
+                LaunchEvent::Status(s) => self.status = s,
+                LaunchEvent::Desktops(list) => self.apply_desktops(list),
+                // The card state comes from the process table, not from here.
+                LaunchEvent::Launched { .. } => {}
+                LaunchEvent::Finished(r) => {
+                    self.running = false;
+                    self.otp.clear();
+                    self.last_otp_complete = false;
+                    self.status = match r {
+                        Ok(()) => {
+                            if self.config.close_after_launch && !self.preview {
+                                self.close_at = Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_millis(1200),
+                                );
                             }
-                            Err(e) => format!("Ошибка: {e:#}"),
-                        };
-                    }
+                            "Рабочий стол открыт в Citrix Workspace".into()
+                        }
+                        Err(e) => format!("Ошибка: {e:#}"),
+                    };
                 }
             }
         }
@@ -278,14 +428,24 @@ impl eframe::App for LauncherApp {
 impl LauncherApp {
     fn content(&mut self, ui: &mut egui::Ui, palette: Palette) {
         ui.set_min_width(ui.available_width());
+        let counter = (!self.show_settings)
+            .then(|| self.carousel_counter())
+            .flatten();
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new("Citrix VDI Launcher")
-                        .size(22.0)
-                        .strong(),
-                );
-            });
+            ui.label(
+                egui::RichText::new("Citrix VDI Launcher")
+                    .size(22.0)
+                    .strong(),
+            );
+            if let Some(counter) = counter {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(counter)
+                            .size(13.0)
+                            .color(palette.secondary_text),
+                    );
+                });
+            }
         });
 
         ui.add_space(18.0);
@@ -294,48 +454,32 @@ impl LauncherApp {
             return;
         }
 
-        card(ui, palette, |ui| {
-            ui.label(
-                egui::RichText::new("РАБОЧИЙ СТОЛ")
-                    .size(11.0)
-                    .strong()
-                    .color(palette.secondary_text),
-            );
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(if self.config.vdi_name.trim().is_empty() {
-                    "VDI не настроен"
-                } else {
-                    &self.config.vdi_name
-                })
-                .size(19.0)
-                .strong(),
-            );
-            ui.add_space(8.0);
-            ui.horizontal_top(|ui| {
-                let state = UiState::from_status(&self.status, self.running);
-                status_indicator(ui, state.color(palette), self.running);
-                let status_width = (ui.available_width() - 22.0).max(120.0);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(status_width, 72.0),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(&self.status).size(14.0).strong())
-                                .wrap(),
-                        );
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(self.next_step())
-                                    .size(13.0)
-                                    .color(palette.secondary_text),
-                            )
+        self.desktop_carousel(ui, palette);
+
+        ui.add_space(12.0);
+        ui.horizontal_top(|ui| {
+            let state = UiState::from_status(&self.status, self.running);
+            status_indicator(ui, state.color(palette), self.running);
+            let status_width = (ui.available_width() - 22.0).max(120.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(status_width, 52.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(&self.status).size(14.0).strong())
                             .wrap(),
-                        );
-                    },
-                );
-            });
+                    );
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(self.next_step())
+                                .size(13.0)
+                                .color(palette.secondary_text),
+                        )
+                        .wrap(),
+                    );
+                },
+            );
         });
 
         ui.add_space(14.0);
@@ -402,7 +546,9 @@ impl LauncherApp {
             .corner_radius(8)
             .min_size(egui::vec2(0.0, 40.0));
             let otp_ready = !self.secret.trim().is_empty() || self.otp.len() == 6;
-            let connect_response = ui.add_enabled(!self.running && otp_ready, connect);
+            // Connecting is the only launch action: a card click merely selects.
+            let ready = otp_ready && self.selected_desktop().is_some();
+            let connect_response = ui.add_enabled(!self.running && ready, connect);
             if self.running {
                 paint_spinner(ui, &connect_response, 18.0, egui::Color32::WHITE);
             }
@@ -479,7 +625,7 @@ impl LauncherApp {
                     );
                     field(
                         ui,
-                        "Название VDI",
+                        "Рабочий стол по умолчанию",
                         &mut self.config.vdi_name,
                         false,
                         palette,
@@ -495,6 +641,14 @@ impl LauncherApp {
                     ) {
                         self.browse_for_citrix();
                     }
+                    ui.add_space(2.0);
+                    checkbox_field(
+                        ui,
+                        &mut self.config.close_after_launch,
+                        "Закрывать приложение после запуска",
+                        "Рабочий стол в Citrix Workspace продолжит работу",
+                        palette,
+                    );
                     ui.cursor().top() - content_top
                 });
             let can_scroll = output.inner > output.inner_rect.height() + 0.5;
@@ -520,6 +674,11 @@ impl LauncherApp {
                     Ok(()) => "Настройки сохранены".into(),
                     Err(e) => format!("Ошибка сохранения: {e:#}"),
                 };
+                // Credentials or gateway may have changed: sign in again.
+                self.end_session();
+                self.desktops = self.config.desktop_choices();
+                self.selected = selected_index(&self.config, &self.desktops);
+                self.clamp_carousel();
             }
             if ui
                 .add_enabled(
@@ -538,6 +697,135 @@ impl LauncherApp {
                 };
             }
         });
+    }
+
+    /// "3 / 7" for the header: position of the selected desktop, and how many
+    /// exist in total. Hidden when there is nothing to choose between.
+    fn carousel_counter(&self) -> Option<String> {
+        let total = self.desktops.len();
+        if total < 2 {
+            return None;
+        }
+        Some(match self.selected {
+            Some(index) => format!("{} / {total}", index + 1),
+            None => format!("— / {total}"),
+        })
+    }
+
+    fn desktop_carousel(&mut self, ui: &mut egui::Ui, palette: Palette) {
+        const CARD_HEIGHT: f32 = 118.0;
+        const CARD_MIN_WIDTH: f32 = 236.0;
+        const CARD_GAP: f32 = 12.0;
+        const ARROW_WIDTH: f32 = 14.0;
+        // Grid rule: card, gutter, arrow, gutter, window edge. The outer gutter
+        // is the frame margin, so only the inner one is added here.
+        const ARROW_GUTTER: f32 = 24.0;
+
+        let total = self.desktops.len();
+        if total == 0 {
+            empty_desktop_card(ui, palette, CARD_HEIGHT);
+            return;
+        }
+        let full_width = ui.available_width();
+        let fit = |width: f32| {
+            (((width + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP)).floor() as usize).max(1)
+        };
+        let mut visible = fit(full_width).min(total);
+        let arrows = visible < total;
+        let cards_width = if arrows {
+            full_width - 2.0 * (ARROW_WIDTH + ARROW_GUTTER)
+        } else {
+            full_width
+        };
+        if arrows {
+            visible = fit(cards_width).min(total);
+        }
+        let max_offset = total - visible;
+        self.carousel_offset = self.carousel_offset.min(max_offset);
+        // Keep the selected card in view when selection moves by keyboard.
+        if let Some(index) = self.selected {
+            if index < self.carousel_offset {
+                self.carousel_offset = index;
+            } else if index >= self.carousel_offset + visible {
+                self.carousel_offset = index + 1 - visible;
+            }
+        }
+        let card_width = ((cards_width - CARD_GAP * (visible.saturating_sub(1)) as f32)
+            / visible as f32)
+            .max(0.0);
+
+        let mut clicked = None;
+        let mut step: i32 = 0;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            if arrows {
+                if arrow(
+                    ui,
+                    palette,
+                    CARD_HEIGHT,
+                    ARROW_WIDTH,
+                    false,
+                    self.carousel_offset > 0,
+                ) {
+                    step = -1;
+                }
+                ui.add_space(ARROW_GUTTER);
+            }
+            for slot in 0..visible {
+                let index = self.carousel_offset + slot;
+                let desktop = &self.desktops[index];
+                if desktop_card(
+                    ui,
+                    palette,
+                    egui::vec2(card_width, CARD_HEIGHT),
+                    &desktop.name,
+                    self.open_desktops.contains(&desktop.key),
+                    self.selected == Some(index),
+                    !self.running,
+                ) {
+                    clicked = Some(index);
+                }
+                if slot + 1 < visible {
+                    ui.add_space(CARD_GAP);
+                }
+            }
+            if arrows {
+                ui.add_space(ARROW_GUTTER);
+                if arrow(
+                    ui,
+                    palette,
+                    CARD_HEIGHT,
+                    ARROW_WIDTH,
+                    true,
+                    self.carousel_offset < max_offset,
+                ) {
+                    step = 1;
+                }
+            }
+        });
+
+        if !self.running && ui.memory(|memory| memory.focused().is_none()) {
+            let (left, right) = ui.input(|input| {
+                (
+                    input.key_pressed(egui::Key::ArrowLeft),
+                    input.key_pressed(egui::Key::ArrowRight),
+                )
+            });
+            let current = self.selected.unwrap_or(0);
+            if left && current > 0 {
+                clicked = Some(current - 1);
+            } else if right && current + 1 < total {
+                clicked = Some(current + 1);
+            }
+        }
+        if let Some(index) = clicked {
+            self.select(index);
+        }
+        if step < 0 {
+            self.carousel_offset = self.carousel_offset.saturating_sub(1);
+        } else if step > 0 {
+            self.carousel_offset = (self.carousel_offset + 1).min(max_offset);
+        }
     }
 
     fn next_step(&self) -> &'static str {
@@ -564,6 +852,247 @@ impl LauncherApp {
             "Можно подключиться к рабочему столу"
         }
     }
+}
+
+/// Index of the configured desktop inside the offered list.
+fn selected_index(config: &AppConfig, desktops: &[KnownDesktop]) -> Option<usize> {
+    let selected = config.vdi_name.trim();
+    if selected.is_empty() {
+        return None;
+    }
+    desktops
+        .iter()
+        .position(|desktop| desktop.key == selected || desktop.name == selected)
+}
+
+fn preview_desktops() -> Vec<KnownDesktop> {
+    const NAMES: [&str; 8] = [
+        "CR-IMG017-FAT",
+        "CR-IMG022-DEV",
+        "CR-IMG031-TEST",
+        "CR-IMG044-ANALYTICS",
+        "CR-IMG051-BUILD",
+        "CR-IMG066-QA",
+        "CR-IMG072-SANDBOX",
+        "CR-IMG089-RESERVE",
+    ];
+    let count = std::env::var("CITRIX_UI_PREVIEW_DESKTOPS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1)
+        .min(NAMES.len());
+    NAMES[..count]
+        .iter()
+        .map(|name| KnownDesktop {
+            key: format!("Controller.{name}"),
+            name: (*name).to_owned(),
+        })
+        .collect()
+}
+
+fn blend(base: egui::Color32, tint: egui::Color32, amount: f32) -> egui::Color32 {
+    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * amount).round() as u8;
+    egui::Color32::from_rgb(
+        mix(base.r(), tint.r()),
+        mix(base.g(), tint.g()),
+        mix(base.b(), tint.b()),
+    )
+}
+
+fn truncated(
+    ui: &mut egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+    width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
+}
+
+/// One desktop card. Returns true when the user picked it.
+fn desktop_card(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    size: egui::Vec2,
+    name: &str,
+    launched: bool,
+    selected: bool,
+    enabled: bool,
+) -> bool {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let hovered = response.hovered() && enabled;
+    let fill = if selected {
+        blend(palette.card, palette.accent, 0.14)
+    } else if hovered {
+        blend(palette.card, palette.accent, 0.05)
+    } else {
+        palette.card
+    };
+    let stroke = if selected {
+        egui::Stroke::new(2.0, palette.accent)
+    } else {
+        egui::Stroke::new(1.0, palette.border)
+    };
+    let text_width = (size.x - 32.0).max(0.0);
+    let caption = truncated(
+        ui,
+        if selected {
+            "ВЫБРАН"
+        } else {
+            "РАБОЧИЙ СТОЛ"
+        },
+        egui::FontId::proportional(11.0),
+        if selected {
+            palette.accent
+        } else {
+            palette.secondary_text
+        },
+        text_width,
+    );
+    let title = truncated(
+        ui,
+        name,
+        egui::FontId::proportional(19.0),
+        ui.visuals().text_color(),
+        text_width,
+    );
+    let state = truncated(
+        ui,
+        if launched {
+            "Запущен"
+        } else {
+            "Не запущен"
+        },
+        egui::FontId::proportional(13.0),
+        if launched {
+            palette.success
+        } else {
+            palette.secondary_text
+        },
+        (text_width - 20.0).max(0.0),
+    );
+    let painter = ui.painter();
+    painter.rect(rect, 12.0, fill, stroke, egui::StrokeKind::Inside);
+    let left = rect.left() + 16.0;
+    painter.galley(
+        egui::pos2(left, rect.top() + 16.0),
+        caption,
+        palette.secondary_text,
+    );
+    painter.galley(
+        egui::pos2(left, rect.top() + 38.0),
+        title,
+        ui.visuals().text_color(),
+    );
+    let state_y = rect.bottom() - 30.0;
+    if launched {
+        let center = egui::pos2(left + 7.0, state_y + 8.0);
+        painter.circle_filled(center, 7.0, palette.success);
+        let tick = egui::Stroke::new(1.8, egui::Color32::WHITE);
+        painter.line_segment(
+            [
+                center + egui::vec2(-3.3, 0.0),
+                center + egui::vec2(-0.8, 2.6),
+            ],
+            tick,
+        );
+        painter.line_segment(
+            [
+                center + egui::vec2(-0.8, 2.6),
+                center + egui::vec2(3.8, -2.8),
+            ],
+            tick,
+        );
+        painter.galley(egui::pos2(left + 20.0, state_y), state, palette.success);
+    } else {
+        painter.galley(egui::pos2(left, state_y), state, palette.secondary_text);
+    }
+    response.clicked()
+}
+
+fn empty_desktop_card(ui: &mut egui::Ui, palette: Palette, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    let width = (rect.width() - 32.0).max(0.0);
+    let title = truncated(
+        ui,
+        "Рабочий стол не настроен",
+        egui::FontId::proportional(19.0),
+        ui.visuals().text_color(),
+        width,
+    );
+    let hint = truncated(
+        ui,
+        "Укажите название VDI в настройках",
+        egui::FontId::proportional(13.0),
+        palette.secondary_text,
+        width,
+    );
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        12.0,
+        palette.card,
+        egui::Stroke::new(1.0, palette.border),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(
+        egui::pos2(rect.left() + 16.0, rect.top() + 38.0),
+        title,
+        ui.visuals().text_color(),
+    );
+    painter.galley(
+        egui::pos2(rect.left() + 16.0, rect.bottom() - 30.0),
+        hint,
+        palette.secondary_text,
+    );
+}
+
+/// Narrow full-height carousel arrow. Returns true when clicked.
+fn arrow(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    height: f32,
+    width: f32,
+    forward: bool,
+    enabled: bool,
+) -> bool {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    let color = if !enabled {
+        palette.placeholder
+    } else if response.hovered() {
+        palette.accent
+    } else {
+        palette.secondary_text
+    };
+    let center = rect.center();
+    let half_width = width / 2.0 - 1.0;
+    let half_height = 14.0;
+    let tip = egui::pos2(
+        center.x + if forward { half_width } else { -half_width },
+        center.y,
+    );
+    let back_x = center.x + if forward { -half_width } else { half_width };
+    let stroke = egui::Stroke::new(2.0, color);
+    ui.painter()
+        .line_segment([egui::pos2(back_x, center.y - half_height), tip], stroke);
+    ui.painter()
+        .line_segment([egui::pos2(back_x, center.y + half_height), tip], stroke);
+    response.clicked()
 }
 
 fn success_check_icon(ui: &mut egui::Ui, color: egui::Color32) {
@@ -612,6 +1141,88 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, secret: bool, palet
             egui::StrokeKind::Inside,
         );
     }
+    ui.add_space(9.0);
+}
+
+/// A checkbox drawn in the same visual language as the text fields: rounded
+/// box, palette border, accent fill when checked.
+fn checkbox_field(ui: &mut egui::Ui, value: &mut bool, label: &str, hint: &str, palette: Palette) {
+    const BOX: f32 = 18.0;
+    const GAP: f32 = 10.0;
+    let text_color = ui.visuals().text_color();
+    let width = ui.available_width();
+    let caption = truncated(
+        ui,
+        label,
+        egui::FontId::proportional(13.0),
+        text_color,
+        (width - BOX - GAP).max(0.0),
+    );
+    let row_height = caption.size().y.max(BOX);
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, row_height), egui::Sense::click());
+    let toggled_by_key = response.has_focus()
+        && ui.input(|input| {
+            input.key_pressed(egui::Key::Space) || input.key_pressed(egui::Key::Enter)
+        });
+    if response.clicked() || toggled_by_key {
+        *value = !*value;
+        response.request_focus();
+    }
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let box_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.center().y - BOX / 2.0),
+        egui::vec2(BOX, BOX),
+    );
+    let border = if *value || response.hovered() || response.has_focus() {
+        palette.accent
+    } else {
+        palette.border
+    };
+    let painter = ui.painter();
+    painter.rect(
+        box_rect,
+        5.0,
+        if *value {
+            palette.accent
+        } else {
+            palette.input
+        },
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
+    if *value {
+        let center = box_rect.center();
+        let tick = egui::Stroke::new(2.0, egui::Color32::WHITE);
+        painter.line_segment(
+            [
+                center + egui::vec2(-4.0, 0.2),
+                center + egui::vec2(-1.3, 3.0),
+            ],
+            tick,
+        );
+        painter.line_segment(
+            [
+                center + egui::vec2(-1.3, 3.0),
+                center + egui::vec2(4.3, -3.2),
+            ],
+            tick,
+        );
+    }
+    painter.galley(
+        egui::pos2(
+            box_rect.right() + GAP,
+            rect.center().y - caption.size().y / 2.0,
+        ),
+        caption,
+        text_color,
+    );
+    ui.add_space(3.0);
+    ui.label(
+        egui::RichText::new(hint)
+            .size(12.0)
+            .color(palette.secondary_text),
+    );
     ui.add_space(9.0);
 }
 
@@ -944,19 +1555,6 @@ fn otp_input(ui: &mut egui::Ui, otp: &mut String, palette: Palette, enabled: boo
     }
 }
 
-fn card(ui: &mut egui::Ui, palette: Palette, content: impl FnOnce(&mut egui::Ui)) {
-    let width = ui.available_width();
-    egui::Frame::new()
-        .fill(palette.card)
-        .stroke(egui::Stroke::new(1.0, palette.border))
-        .corner_radius(12)
-        .inner_margin(16)
-        .show(ui, |ui| {
-            ui.set_width((width - 32.0).max(0.0));
-            content(ui);
-        });
-}
-
 fn settings_card(ui: &mut egui::Ui, palette: Palette, content: impl FnOnce(&mut egui::Ui)) {
     let width = ui.available_width();
     egui::Frame::new()
@@ -1009,15 +1607,55 @@ fn configure_style(ctx: &egui::Context) {
 
 #[cfg(test)]
 mod tests {
-    use super::is_citrix_session_process;
+    use super::{is_citrix_session_process, running_keys};
+    use std::collections::HashSet;
 
     #[test]
     fn recognizes_cross_platform_ica_session_processes() {
-        for name in ["wfica32.exe", "WFICA32", "wfica", "Citrix Viewer"] {
+        for name in [
+            "Citrix.DesktopViewer.App.exe",
+            "wfica32.exe",
+            "WFICA32",
+            "wfica",
+            "Citrix Viewer",
+        ] {
             assert!(is_citrix_session_process(name), "{name}");
         }
-        for name in ["Receiver", "SelfService", "wfcrun32", "concentr"] {
+        // wfcrun32.exe outlives the session it started, so treating it as a
+        // session process makes a launched desktop look permanently open.
+        for name in ["Receiver", "SelfService", "concentr", "wfcrun32.exe"] {
             assert!(!is_citrix_session_process(name), "{name}");
         }
+    }
+
+    #[test]
+    fn keeps_only_desktops_whose_ica_file_is_still_open() {
+        // Synthetic keys in the StoreFront shape "CONTROLLER-NAME $ID": Citrix
+        // lower-cases the ICA path in its command line, and the launcher
+        // replaces every non-alphanumeric character when naming the file.
+        let launched: HashSet<String> = [
+            "CTRL-01-ALPHA $B200-11-22CD33EF-0001",
+            "CTRL-01-BETA $C300-12-44AB55CD-0002",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let command_lines = vec![
+            r#""c:\program files (x86)\citrix\ica client\citrix.desktopviewer.app.exe" "c:\users\u\appdata\local\citrixvdilauncher\launch-ctrl-01-beta--c300-12-44ab55cd-0002.ica" /extsessionid:4237317593"#.to_owned(),
+            r#""c:\program files (x86)\citrix\ica client\wfica32.exe" mfservice00080486002"#.to_owned(),
+        ];
+        let running = running_keys(&launched, &command_lines);
+        assert_eq!(
+            running,
+            HashSet::from(["CTRL-01-BETA $C300-12-44AB55CD-0002".to_owned()]),
+            "only the desktop whose ICA file is open stays marked"
+        );
+    }
+
+    #[test]
+    fn reports_nothing_when_command_lines_carry_no_ica_path() {
+        let launched: HashSet<String> = HashSet::from(["Controller.ALPHA".to_owned()]);
+        let running = running_keys(&launched, &["citrix viewer".to_owned()]);
+        assert!(running.is_empty(), "callers then keep the previous marks");
     }
 }

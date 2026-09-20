@@ -8,7 +8,7 @@
 
 ## 개요와 기능
 
-인증, OTP/TOTP, VDI 검색, ICA 다운로드, Citrix Workspace 실행을 처리합니다. GUI와 CLI는 Rust core를 공유하며 비밀은 Windows DPAPI, macOS Keychain 또는 Linux Secret Service로 보호합니다. Citrix Systems, Inc.와 관련 없는 독립 프로젝트입니다.
+인증, OTP/TOTP, VDI 검색, ICA 다운로드, Citrix Workspace 실행을 처리합니다. StoreFront가 게시한 데스크톱을 선택할 수 있으며 한 번의 로그인으로 여러 데스크톱을 실행할 수 있습니다. GUI와 CLI는 Rust core를 공유하며 비밀은 Windows DPAPI, macOS Keychain 또는 Linux Secret Service로 보호합니다. Citrix Systems, Inc.와 관련 없는 독립 프로젝트입니다.
 
 ## 요구 사항과 설치
 
@@ -20,6 +20,8 @@ Citrix Workspace, 호환 Gateway/StoreFront, 그리고 Windows x86-64, macOS Int
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 `config show`, `config path`, `detect-citrix`, `--password`/`--totp-secret` 저장도 제공합니다. 비밀은 system credential store에 보관됩니다.

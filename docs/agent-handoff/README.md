@@ -23,10 +23,12 @@ This directory is the canonical, vendor-neutral context package for continuing d
 
 ## Current baseline
 
-- Version: `1.0.1`.
+- Version: `1.1.0`.
 - Default branch: `main`.
 - Repository visibility: public; source remains proprietary under `LICENSE`.
 - GUI and CLI share one Rust library and one OS-standard configuration.
+- The user selects one of the desktops published by StoreFront, and several can
+  be launched from a single sign-in while the launcher stays open.
 - Direct network authentication has been proven against one Citrix Gateway/StoreFront deployment without opening a browser.
 - CI builds and tests on Windows, macOS, and Linux.
 - Release artifacts are Windows ZIP, macOS app ZIP, Debian package, and RPM package.

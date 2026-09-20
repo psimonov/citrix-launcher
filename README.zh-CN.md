@@ -8,7 +8,7 @@
 
 ## 概述与功能
 
-支持认证、OTP/TOTP、VDI 发现、ICA 下载及启动 Citrix Workspace。GUI 与 CLI 共享 Rust 核心；机密信息使用 Windows DPAPI、macOS Keychain 或 Linux Secret Service。本项目独立开发，与 Citrix Systems, Inc. 无关联。
+支持认证、OTP/TOTP、VDI 发现、ICA 下载及启动 Citrix Workspace。可选择 StoreFront 发布的任意桌面，一次登录即可启动多个桌面。GUI 与 CLI 共享 Rust 核心；机密信息使用 Windows DPAPI、macOS Keychain 或 Linux Secret Service。本项目独立开发，与 Citrix Systems, Inc. 无关联。
 
 ## 要求与安装
 
@@ -20,6 +20,8 @@
 citrix-vdi-cli config set --storefront https://gateway.example/ --vdi MY-DESKTOP --username user
 citrix-vdi-cli connect
 citrix-vdi-cli connect --otp 123456
+citrix-vdi-cli desktops
+citrix-vdi-cli launch MY-DESKTOP OTHER-DESKTOP
 ```
 
 还提供 `config show`、`config path`、`detect-citrix`，并可保存 `--password`/`--totp-secret`。配置文件按平台自动创建，机密信息保存在系统 credential store。
